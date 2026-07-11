@@ -249,6 +249,7 @@ const I18N = {
     remaining: "剩余",
     low: "低",
     high: "高",
+    hitExcellent: "优秀",
     hitGood: "良好",
     hitNormal: "一般",
     hitLow: "偏低",
@@ -259,8 +260,9 @@ const I18N = {
     sourceAPI: "接口数据",
     sourceMerged: "Codex + Antigravity",
     sourceAG: "Antigravity · 估算",
-    hitSummaryGood: "上下文复用充分，输入成本压力较低。",
-    hitSummaryMid: "缓存有贡献，仍可继续稳定提示结构。",
+    hitSummaryExcellent: "上下文复用极佳，输入成本被大幅削减。",
+    hitSummaryGood: "上下文复用良好，有显著的成本节省效果。",
+    hitSummaryMid: "缓存有贡献，仍可继续稳定提示词结构。",
     hitSummaryLow: "缓存复用偏少，长上下文任务成本更容易上升。",
     modelCount: (n) => `${n} 个模型`,
     noLocalData: "暂无本地会话数据",
@@ -304,6 +306,7 @@ const I18N = {
     remaining: "Remaining",
     low: "Low",
     high: "High",
+    hitExcellent: "Excellent",
     hitGood: "Good",
     hitNormal: "Average",
     hitLow: "Low",
@@ -314,6 +317,7 @@ const I18N = {
     sourceAPI: "API data",
     sourceMerged: "Codex + Antigravity",
     sourceAG: "Antigravity · Estimated",
+    hitSummaryExcellent: "Outstanding cache reuse, significantly slashing input costs.",
     hitSummaryGood: "Strong context reuse keeps input costs low.",
     hitSummaryMid: "Cache helps, consider stabilizing prompt structure.",
     hitSummaryLow: "Low cache reuse may increase costs on long-context tasks.",
@@ -688,7 +692,15 @@ function renderTokenStats(stats, modelUsage) {
     elements.cacheHitRate.classList.remove("text-label");
     elements.cacheHitRate.textContent = `${hitRate}%`;
   }
-  elements.hitDelta.textContent = hitRate == null ? t("noData") : hitRate >= 60 ? t("hitGood") : hitRate >= 30 ? t("hitNormal") : t("hitLow");
+  elements.hitDelta.textContent = hitRate == null
+    ? t("noData")
+    : hitRate >= 85
+      ? t("hitExcellent")
+      : hitRate >= 60
+        ? t("hitGood")
+        : hitRate >= 30
+          ? t("hitNormal")
+          : t("hitLow");
   elements.hitSummary.textContent = hitRate == null
     ? (stats?.error ? `account/usage/read: ${shortError(stats.error)}` : t("noData"))
     : hitSummary(hitRate);
@@ -1056,8 +1068,9 @@ function toneForPercent(percent) {
 }
 
 function hitSummary(hitRate) {
-  if (hitRate >= 70) return t("hitSummaryGood");
-  if (hitRate >= 40) return t("hitSummaryMid");
+  if (hitRate >= 85) return t("hitSummaryExcellent");
+  if (hitRate >= 60) return t("hitSummaryGood");
+  if (hitRate >= 30) return t("hitSummaryMid");
   return t("hitSummaryLow");
 }
 
