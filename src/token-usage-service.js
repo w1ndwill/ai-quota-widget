@@ -21,6 +21,7 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
     },
     { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 }
   );
+  const modelUsage = summarizeModelUsage(usages);
 
   if (!usages.length) {
     return {
@@ -31,6 +32,7 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
       reasoning: null,
       total: null,
       cacheHitRate: null,
+      modelUsage: [],
       sessions: 0,
       error: "No local Codex session usage found"
     };
@@ -44,25 +46,26 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
     reasoning: totals.reasoning,
     total: totals.total,
     cacheHitRate: Math.round((totals.cached / Math.max(1, totals.input)) * 100),
+    modelUsage,
     sessions: sessions.size || recent.fallbacks.length,
     since
   };
 }
 
-function readDailyTokenHistory({ now = Date.now(), days = 30, root = defaultSessionsRoot() } = {}) {
+function readDailyTokenHistory({ now = Date.now(), days = 30, root = defaultSessionsRoot(), model = "all" } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
   const dailyMap = {};
   const recent = readRecentUsageEvents({ since, root });
-  for (const event of recent.events) {
+  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
     addUsage(dailyMap, localDateKey(event.t), event);
   }
-  for (const fallback of recent.fallbacks) {
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
     addUsage(dailyMap, localDateKey(fallback.t), fallback);
   }
   return dailyMap;
 }
 
-function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSessionsRoot() } = {}) {
+function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSessionsRoot(), model = "all" } = {}) {
   const hourMs = 60 * 60 * 1000;
   const since = now - hours * hourMs;
   const currentHour = Math.floor(now / hourMs) * hourMs;
@@ -77,11 +80,11 @@ function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSe
     total: 0
   }));
   const recent = readRecentUsageEvents({ since, root });
-  for (const event of recent.events) {
+  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
     const index = Math.floor((event.t - firstHour) / hourMs);
     if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], event);
   }
-  for (const fallback of recent.fallbacks) {
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
     const index = Math.floor((fallback.t - firstHour) / hourMs);
     if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], fallback);
   }
@@ -103,26 +106,51 @@ function readRecentUsageEvents({ since, root }) {
       continue;
     }
     const usage = readLatestUsage(file);
-    if (usage) fallbacks.push({ file, t: mtimeMs, ...usage });
+    if (usage) fallbacks.push({ file, t: mtimeMs, model: "unknown", ...usage });
   }
   return { events, fallbacks };
 }
 
+function matchesModel(usage, model) {
+  return model === "all" || (usage.model ?? "unknown") === model;
+}
+
 function readUsageEvents(file) {
   const events = [];
+  let currentModel = null;
   const content = fs.readFileSync(file, "utf8");
   for (const line of content.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
       const item = JSON.parse(line);
+      currentModel = readModelName(item) ?? currentModel;
       const timestamp = Date.parse(item?.timestamp);
       const usage = item?.payload?.info?.last_token_usage;
-      if (Number.isFinite(timestamp) && usage) events.push({ t: timestamp, ...normalizeUsage(usage) });
+      if (Number.isFinite(timestamp) && usage) {
+        events.push({ t: timestamp, model: currentModel ?? "unknown", ...normalizeUsage(usage) });
+      }
     } catch {
       // Ignore partial or non-JSON lines.
     }
   }
   return events;
+}
+
+function summarizeModelUsage(usages) {
+  const models = new Map();
+  for (const usage of usages) {
+    const model = usage.model || "unknown";
+    if (!models.has(model)) {
+      models.set(model, { model, input: 0, cached: 0, output: 0, reasoning: 0, total: 0 });
+    }
+    addUsageToBucket(models.get(model), usage);
+  }
+  return [...models.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
+}
+
+function readModelName(item) {
+  const model = item?.payload?.model ?? item?.payload?.info?.model ?? item?.payload?.collaboration_mode?.settings?.model;
+  return typeof model === "string" && model.trim() ? model.trim() : null;
 }
 
 function addUsage(map, key, usage) {
@@ -215,6 +243,49 @@ function readNumber(value, fallback) {
   return fallback;
 }
 
+function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defaultSessionsRoot(), model = "all" } = {}) {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+  const dailySince = now - days * dayMs;
+  const hourlySince = now - hours * hourMs;
+  const recent = readRecentUsageEvents({ since: dailySince, root });
+
+  const dailyMap = {};
+  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
+    addUsage(dailyMap, localDateKey(event.t), event);
+  }
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
+    addUsage(dailyMap, localDateKey(fallback.t), fallback);
+  }
+
+  const currentHour = Math.floor(now / hourMs) * hourMs;
+  const firstHour = Math.floor(hourlySince / hourMs) * hourMs;
+  const bucketCount = Math.floor((currentHour - firstHour) / hourMs) + 1;
+  const buckets = Array.from({ length: bucketCount }, (_, index) => ({
+    t: firstHour + index * hourMs,
+    input: 0,
+    cached: 0,
+    output: 0,
+    reasoning: 0,
+    total: 0
+  }));
+
+  for (const event of recent.events) {
+    if (event.t >= hourlySince && matchesModel(event, model)) {
+      const index = Math.floor((event.t - firstHour) / hourMs);
+      if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], event);
+    }
+  }
+  for (const fallback of recent.fallbacks) {
+    if (fallback.t >= hourlySince && matchesModel(fallback, model)) {
+      const index = Math.floor((fallback.t - firstHour) / hourMs);
+      if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], fallback);
+    }
+  }
+
+  return { daily: dailyMap, hourly: buckets };
+}
+
 function defaultSessionsRoot() {
   return [
     path.join(os.homedir(), ".codex", "sessions"),
@@ -228,5 +299,6 @@ module.exports = {
   readUsageEvents,
   normalizeUsage,
   readDailyTokenHistory,
-  readHourlyTokenHistory
+  readHourlyTokenHistory,
+  readTokenHistory
 };

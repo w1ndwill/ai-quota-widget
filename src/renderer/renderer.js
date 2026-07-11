@@ -53,6 +53,8 @@ const elements = {
 let isCompact = localStorage.getItem("compact") === "1";
 let isRefreshing = false;
 let focusedCard = null;
+let lastSnapshot = null;
+let selectedModel = "all";
 const chartSeries = new Map();
 const HISTORY_VERSION = "2";
 let history = readHistory();
@@ -65,6 +67,7 @@ elements.pinButton.addEventListener("click", async () => {
   elements.pinButton.classList.toggle("active", pinned);
   elements.pinButton.title = pinned ? "取消置顶" : "置顶";
 });
+setupModelSelect();
 setupRingLayers();
 const trendCard = document.querySelector(".trend-card");
 trendCard.addEventListener("click", (event) => {
@@ -82,13 +85,14 @@ elements.shell.addEventListener("click", (event) => {
   }
 });
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeModelPicker();
   if (event.key === "Escape") clearCardFocus();
 });
 
 window.aiQuota.onUpdated(render);
 renderBar(elements.shortBar, 0, "gray");
 renderBar(elements.longBar, 0, "gray");
-renderHeatmap();
+renderHistory();
 setCompact(isCompact);
 generateAndSaveTrayIcon();
 refresh();
@@ -125,6 +129,7 @@ async function setCompact(compact) {
 
 
 function render(snapshot) {
+  lastSnapshot = snapshot;
   const quota = snapshot?.quota;
   elements.updatedAt.textContent = snapshot?.error ? "读取失败" : formatTime(snapshot?.updatedAt ?? Date.now());
   elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));
@@ -133,10 +138,105 @@ function render(snapshot) {
   renderWindow("long", quota?.longWindow, "周限额");
   renderRing(quota);
   renderResetCredits(snapshot?.resetCredits, quota?.resetCard);
-  renderTokenStats(quota?.tokenStats);
+  renderTokenStats(quota?.tokenStats, snapshot?.localTokenUsage?.modelUsage);
   recordHistory(quota);
-  renderTrend();
-  renderHeatmap();
+  renderHistory();
+}
+
+function setupModelSelect() {
+  const picker = document.createElement("div");
+  const trigger = document.createElement("button");
+  const label = document.createElement("span");
+  const arrow = document.createElement("i");
+  const menu = document.createElement("div");
+  picker.className = "model-picker";
+  trigger.className = "model-picker-trigger";
+  trigger.type = "button";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-label", "\u9009\u62e9\u7edf\u8ba1\u6a21\u578b");
+  label.className = "model-picker-label";
+  arrow.className = "model-picker-arrow";
+  menu.className = "model-picker-menu";
+  menu.setAttribute("role", "listbox");
+  trigger.append(label, arrow);
+  picker.append(trigger, menu);
+  elements.tokenCost.remove();
+  document.querySelector(".window-actions").prepend(picker);
+  elements.modelPicker = picker;
+  elements.modelPickerTrigger = trigger;
+  elements.modelPickerLabel = label;
+  elements.modelPickerMenu = menu;
+  document.querySelector(".model-usage-card")?.remove();
+
+  trigger.addEventListener("click", () => {
+    picker.classList.contains("open") ? closeModelPicker() : openModelPicker();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!picker.contains(event.target)) closeModelPicker();
+  });
+}
+
+function syncModelSelect(modelUsage) {
+  const models = Array.isArray(modelUsage) ? modelUsage : [];
+  const allowed = new Set(["all", ...models.map((item) => item.model)]);
+  if (!allowed.has(selectedModel)) selectedModel = "all";
+  elements.modelPickerMenu.replaceChildren();
+  for (const item of [{ model: "all", label: "\u5168\u90e8\u6a21\u578b" }, ...models]) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "model-picker-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(item.model === selectedModel));
+    option.classList.toggle("selected", item.model === selectedModel);
+    option.textContent = modelLabel(item);
+    option.addEventListener("click", () => {
+      selectedModel = item.model;
+      closeModelPicker();
+      renderTokenStats(lastSnapshot?.quota?.tokenStats, lastSnapshot?.localTokenUsage?.modelUsage);
+      renderHistory();
+    });
+    elements.modelPickerMenu.append(option);
+  }
+  const selected = { model: selectedModel, label: selectedModel === "all" ? "\u5168\u90e8\u6a21\u578b" : null };
+  elements.modelPickerLabel.textContent = modelLabel(selected);
+}
+
+function modelLabel(item) {
+  return item.label ?? (item.model === "unknown" ? "\u672a\u77e5\u6a21\u578b" : item.model);
+}
+
+function openModelPicker() {
+  elements.modelPicker.classList.add("open");
+  elements.modelPickerTrigger.setAttribute("aria-expanded", "true");
+}
+
+function closeModelPicker() {
+  if (!elements.modelPicker) return;
+  elements.modelPicker.classList.remove("open");
+  elements.modelPickerTrigger.setAttribute("aria-expanded", "false");
+}
+
+function renderModelUsage(modelUsage) {
+  const models = Array.isArray(modelUsage) ? modelUsage : [];
+  elements.modelUsageList.replaceChildren();
+  elements.modelUsageSummary.textContent = models.length ? `${models.length} 个模型` : "近 24 小时";
+  if (!models.length) {
+    const empty = document.createElement("span");
+    empty.className = "model-empty";
+    empty.textContent = "暂无本地会话数据";
+    elements.modelUsageList.append(empty);
+    return;
+  }
+  for (const item of models) {
+    const row = document.createElement("div");
+    const name = document.createElement("span");
+    const total = document.createElement("b");
+    name.textContent = item.model === "unknown" ? "未知模型（旧记录）" : item.model;
+    total.textContent = formatToken(item.total);
+    row.append(name, total);
+    elements.modelUsageList.append(row);
+  }
 }
 
 function renderWindow(prefix, quotaWindow, fallbackLabel) {
@@ -168,7 +268,17 @@ function renderResetCredits(resetCredits, resetCard) {
   elements.resetExpiry.textContent = expiresAt ? formatDateTime(expiresAt) : "到期未知";
 }
 
-function renderTokenStats(stats) {
+function renderTokenStats(stats, modelUsage) {
+  syncModelSelect(modelUsage);
+  const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => item.model === selectedModel);
+  if (selectedUsage) {
+    stats = {
+      ...stats,
+      ...selectedUsage,
+      source: "localModel",
+      cacheHitRate: Math.round((selectedUsage.cached / Math.max(1, selectedUsage.input)) * 100)
+    };
+  }
   const hasTokenData =
     typeof stats?.input === "number" ||
     typeof stats?.cached === "number" ||
@@ -232,18 +342,25 @@ function recordHistory(quota) {
   localStorage.setItem("quotaHistory", JSON.stringify(history));
 }
 
-async function renderTrend() {
+async function renderHistory() {
+  const modelForRender = selectedModel;
   let daily;
   let hourly;
   try {
-    [daily, hourly] = await Promise.all([
-      window.aiQuota.readDailyTokenHistory(),
-      window.aiQuota.readHourlyTokenHistory()
-    ]);
+    const historyData = await window.aiQuota.readTokenHistory(modelForRender);
+    daily = historyData.daily;
+    hourly = historyData.hourly;
   } catch {
     daily = {};
     hourly = [];
   }
+  if (modelForRender !== selectedModel) return;
+
+  renderTrendWithData(daily, hourly);
+  renderHeatmapWithData(daily);
+}
+
+function renderTrendWithData(daily, hourly) {
   const now = Date.now();
   const recent = (Array.isArray(hourly) ? hourly : []).map((entry, index, values) => ({
     value: entry.total ?? 0,
@@ -277,17 +394,10 @@ async function renderTrend() {
   elements.trendAverage.textContent = `7 天日均 ${formatToken(Math.round(weekTotal / 7))}`;
 }
 
-
-async function renderHeatmap() {
-  let daily;
-  try {
-    daily = await window.aiQuota.readDailyTokenHistory();
-  } catch {
-    daily = {};
-  }
+function renderHeatmapWithData(daily) {
   const today = new Date();
   const days = [];
-  for (let i = 29; i >= 0; i--) {
+  for (let i = 41; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -303,6 +413,7 @@ async function renderHeatmap() {
     const cell = document.createElement("span");
     cell.style.opacity = day.token == null ? "0.1" : String(0.2 + (Math.min(day.token, maxToken) / maxToken) * 0.8);
     cell.dataset.date = day.date;
+    cell.dataset.day = String(day.d.getDate());
     cell.dataset.token = day.token == null ? "" : formatToken(day.token);
     cell.dataset.label = `${day.d.getMonth() + 1}/${day.d.getDate()}`;
     elements.hitHeatmap.append(cell);

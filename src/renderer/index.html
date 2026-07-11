@@ -95,6 +95,17 @@
                 </div>
               </article>
             </section>
+
+            <article id="resetRow" class="metric reset-row interactive-card" data-expand-title="重置卡" tabindex="0" aria-label="重置卡，点击放大">
+              <div class="metric-main">
+                <div class="metric-title">重置卡</div>
+                <p class="reset-sub" id="resetSub">可恢复 5 小时与周额度</p>
+              </div>
+              <div class="metric-side">
+                <strong id="resetCount">-- 张</strong>
+                <span id="resetExpiry">到期未知</span>
+              </div>
+            </article>
           </aside>
 
           <section class="token-grid" aria-label="Token 分析">
@@ -125,13 +136,13 @@
               <p id="hitSummary">当前接口没有返回缓存命中率字段</p>
             </article>
 
-            <article id="resetRow" class="token-card reset-row interactive-card" data-expand-title="重置卡" tabindex="0" aria-label="重置卡，点击放大">
+
+            <article class="token-card model-usage-card interactive-card" data-expand-title="按模型 Token 用量" tabindex="0" aria-label="按模型 Token 用量，点击放大">
               <div class="card-head">
-                <span>重置卡</span>
-                <b id="resetExpiry">到期未知</b>
+                <span>按模型 Token 用量</span>
+                <b id="modelUsageSummary">近 24 小时</b>
               </div>
-              <strong id="resetCount">-- 张</strong>
-              <p>可恢复 5 小时与周额度</p>
+              <div id="modelUsageList" class="model-usage-list"><span class="model-empty">暂无本地会话数据</span></div>
             </article>
           </section>
 

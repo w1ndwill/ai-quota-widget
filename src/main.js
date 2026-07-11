@@ -5,14 +5,14 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { CodexService } = require("./codex-service");
 const { readResetCredits } = require("./reset-credits-service");
-const { readLocalTokenUsage, readDailyTokenHistory, readHourlyTokenHistory } = require("./token-usage-service");
+const { readLocalTokenUsage, readDailyTokenHistory, readHourlyTokenHistory, readTokenHistory } = require("./token-usage-service");
 
 // Configure portable userData directory inside project folder (D drive) instead of C drive
 const appDir = app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
 const userDataPath = path.join(appDir, ".userdata");
 app.setPath("userData", userDataPath);
 
-const NORMAL_SIZE = { width: 760, height: 560 };
+const NORMAL_SIZE = { width: 760, height: 540 };
 const COMPACT_SIZE = { width: 360, height: 76 };
 
 const codex = new CodexService();
@@ -88,16 +88,21 @@ async function readSnapshot() {
   let resetCredits = null;
   let localTokenUsage = null;
 
-  try {
-    quota = await codex.readQuota();
-  } catch (error) {
-    errors.push(error.message);
+  const [quotaResult, resetResult] = await Promise.allSettled([
+    codex.readQuota(),
+    readResetCredits()
+  ]);
+
+  if (quotaResult.status === "fulfilled") {
+    quota = quotaResult.value;
+  } else {
+    errors.push(quotaResult.reason.message);
   }
 
-  try {
-    resetCredits = await readResetCredits();
-  } catch (error) {
-    errors.push(error.message);
+  if (resetResult.status === "fulfilled") {
+    resetCredits = resetResult.value;
+  } else {
+    errors.push(resetResult.reason.message);
   }
 
   try {
@@ -165,18 +170,25 @@ app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle("window:setCompact", (_event, compact) => resizeWindow(Boolean(compact)));
-  ipcMain.handle("tokens:dailyHistory", () => {
+  ipcMain.handle("tokens:dailyHistory", (_event, model) => {
     try {
-      return readDailyTokenHistory();
+      return readDailyTokenHistory({ model, days: 45 });
     } catch {
       return {};
     }
   });
-  ipcMain.handle("tokens:hourlyHistory", () => {
+  ipcMain.handle("tokens:hourlyHistory", (_event, model) => {
     try {
-      return readHourlyTokenHistory();
+      return readHourlyTokenHistory({ model });
     } catch {
       return [];
+    }
+  });
+  ipcMain.handle("tokens:history", (_event, model) => {
+    try {
+      return readTokenHistory({ model, days: 45 });
+    } catch {
+      return { daily: {}, hourly: [] };
     }
   });
   ipcMain.on("tray:saveIcon", (_event, dataUrl) => {
@@ -202,6 +214,9 @@ app.whenReady().then(() => {
       updatedAt: Date.now()
     });
   });
+
+  // Pre-warm codex process before window is ready to reduce first-refresh latency
+  codex.ensureStarted().catch(() => {});
 
   createWindow();
   createTray();

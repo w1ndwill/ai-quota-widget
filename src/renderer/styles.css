@@ -176,12 +176,13 @@ body {
 .dashboard {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   grid-template-areas:
     "side tokens"
     "side analysis";
   gap: 14px;
   height: calc(100% - 42px);
+  align-content: start;
   min-width: 0;
   min-height: 0;
 }
@@ -190,7 +191,7 @@ body {
   grid-area: side;
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   min-height: 0;
   padding: 12px;
@@ -534,7 +535,7 @@ body {
 .token-grid {
   grid-area: tokens;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
 }
@@ -542,8 +543,160 @@ body {
 .token-card {
   display: grid;
   gap: 11px;
-  min-height: 140px;
+  min-height: 130px;
   padding: 14px;
+}
+
+.model-usage-card {
+  grid-column: 1 / -1;
+  min-height: 82px;
+}
+
+.model-picker {
+  position: relative;
+  width: 142px;
+  z-index: 4;
+}
+
+.model-picker-trigger {
+  display: flex;
+  width: 100%;
+  height: 29px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid rgba(69, 88, 77, 0.18);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #334039;
+  box-shadow: 0 1px 2px rgba(38, 58, 45, 0.05);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.model-picker-trigger:hover,
+.model-picker.open .model-picker-trigger {
+  border-color: rgba(52, 166, 91, 0.5);
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(38, 92, 54, 0.12);
+}
+
+.model-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-arrow {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-right: 2px solid #607068;
+  border-bottom: 2px solid #607068;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms ease;
+}
+
+.model-picker.open .model-picker-arrow {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.model-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: none;
+  width: 100%;
+  max-height: 174px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid rgba(60, 78, 68, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 28px rgba(37, 63, 47, 0.18);
+}
+
+.quota-side .reset-row {
+  border-color: rgba(103, 87, 231, 0.14);
+}
+
+.quota-side .reset-row .reset-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.model-picker.open .model-picker-menu {
+  display: grid;
+  gap: 2px;
+}
+
+.model-picker-option {
+  width: 100%;
+  overflow: hidden;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #3e4d45;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-option:hover {
+  background: rgba(88, 200, 104, 0.12);
+  color: #17633b;
+}
+
+.model-picker-option.selected {
+  background: rgba(88, 200, 104, 0.18);
+  color: #116334;
+}
+
+.model-usage-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-usage-list div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(103, 87, 231, 0.08);
+  color: #303945;
+  font-size: 12px;
+}
+
+.model-usage-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-usage-list b {
+  flex: none;
+  color: #332a94;
+}
+
+.model-empty {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .card-head,
@@ -573,6 +726,19 @@ body {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The total card has two independent labels; stack them so neither competes for width. */
+.total-token .card-head {
+  display: grid;
+  justify-content: start;
+  gap: 2px;
+}
+
+.total-token .card-head span,
+.total-token .card-head b {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .trend-head {
@@ -663,22 +829,24 @@ body {
 
 .trend-card {
   grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 4px;
 }
 
 .heat-card {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto;
+  align-content: end;
 }
 
 .trend-panels {
   display: grid;
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 4px;
   min-height: 0;
 }
 
 .trend-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto 65px;
   min-height: 0;
 }
 
@@ -704,7 +872,7 @@ body {
 .token-trend-chart {
   display: block;
   width: 100%;
-  height: 112px;
+  height: 65px;
   overflow: visible;
 }
 
@@ -831,16 +999,24 @@ body {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
-  align-content: start;
 }
 
 .hit-heatmap span {
+  display: grid;
   aspect-ratio: 1;
+  place-items: center;
   border-radius: 4px;
   background: var(--amber);
+  color: rgba(91, 68, 18, 0.76);
   cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
   position: relative;
   transition: transform 180ms var(--motion-spring), box-shadow 180ms ease, filter 180ms ease;
+}
+
+.hit-heatmap span::after {
+  content: attr(data-day);
 }
 
 .hit-heatmap span:hover {
@@ -1027,7 +1203,10 @@ body.compact .titlebar {
 body.compact .brand,
 body.compact .plan-pill,
 body.compact #closeButton,
+body.compact #refreshButton,
+body.compact .model-picker,
 body.compact .quota-rings,
+body.compact .reset-row,
 body.compact .token-grid,
 body.compact .analysis-grid {
   display: none;
@@ -1035,7 +1214,7 @@ body.compact .analysis-grid {
 
 body.compact .window-actions {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   gap: 2px;
 }
@@ -1066,7 +1245,7 @@ body.compact .dashboard {
 
 body.compact .quota-side {
   display: block;
-  padding: 0 82px 0 0;
+  padding: 0 42px 0 0;
   border: 0;
   border-radius: 0;
   background: none;

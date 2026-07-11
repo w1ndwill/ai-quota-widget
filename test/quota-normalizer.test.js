@@ -264,6 +264,33 @@ test("groups token increments by event time instead of file modification time", 
   assert.equal(hourly.reduce((sum, bucket) => sum + bucket.total, 0), 1_000);
 });
 
+test("groups local token usage by the model active when each event was recorded", (t) => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { readLocalTokenUsage } = require("../src/token-usage-service");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-bar-model-usage-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const now = Date.parse("2026-07-11T12:00:00Z");
+  const event = (model, total) => [
+    { timestamp: new Date(now).toISOString(), type: "turn_context", payload: { model } },
+    { timestamp: new Date(now + 1).toISOString(), type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { input_tokens: total, total_tokens: total } } } }
+  ];
+  fs.writeFileSync(path.join(dir, "rollout.jsonl"), [...event("gpt-5.6-terra", 120), ...event("gpt-5.5-mini", 80)].map(JSON.stringify).join("\n"));
+
+  const usage = readLocalTokenUsage({ now: now + 60_000, root: dir });
+  assert.deepEqual(usage.modelUsage.map(({ model, total }) => ({ model, total })), [
+    { model: "gpt-5.6-terra", total: 120 },
+    { model: "gpt-5.5-mini", total: 80 }
+  ]);
+  const daily = readDailyTokenHistory({ now: now + 60_000, root: dir, model: "gpt-5.5-mini" });
+  const hourly = readHourlyTokenHistory({ now: now + 60_000, root: dir, model: "gpt-5.5-mini" });
+  const date = new Date(now);
+  const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  assert.equal(daily[dayKey].total, 80);
+  assert.equal(hourly.reduce((sum, bucket) => sum + bucket.total, 0), 80);
+});
+
 test("formats duration labels", () => {
   assert.equal(labelForDuration(45, "fallback"), "45分钟");
   assert.equal(labelForDuration(90, "fallback"), "1.5小时");
