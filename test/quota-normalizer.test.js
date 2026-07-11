@@ -303,3 +303,63 @@ test("normalizes second and millisecond timestamps", () => {
   assert.equal(normalizeTimestamp(1800000000000), 1800000000000);
   assert.equal(normalizeTimestamp(null), null);
 });
+
+test("reads Claude Code projects session log with message.model, message.usage and deduplicates", (t) => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { readLocalTokenUsage } = require("../src/token-usage-service");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-code-usage-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const now = Date.parse("2026-07-11T12:00:00Z");
+  const file = path.join(dir, "session.jsonl");
+  fs.writeFileSync(
+    file,
+    [
+      JSON.stringify({
+        timestamp: new Date(now).toISOString(),
+        message: {
+          id: "msg-1",
+          model: "deepseek-v4-pro",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20
+          }
+        }
+      }),
+      JSON.stringify({
+        timestamp: new Date(now + 1).toISOString(),
+        message: {
+          id: "msg-1",
+          model: "deepseek-v4-pro",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20
+          }
+        }
+      }),
+      JSON.stringify({
+        timestamp: new Date(now + 2).toISOString(),
+        message: {
+          id: "msg-2",
+          model: "deepseek-v4-pro",
+          usage: {
+            input_tokens: 200,
+            cache_read_input_tokens: 500,
+            output_tokens: 30
+          }
+        }
+      })
+    ].join("\n"),
+    "utf8"
+  );
+
+  const usage = readLocalTokenUsage({ now: now + 60_000, root: dir });
+  assert.equal(usage.input, 800); // 100 + (200 + 500) = 800
+  assert.equal(usage.cached, 500);
+  assert.equal(usage.output, 50);
+  assert.equal(usage.total, 850);
+  assert.deepEqual(usage.modelUsage, [
+    { model: "deepseek-v4-pro", input: 800, cached: 500, output: 50, reasoning: 0, total: 850 }
+  ]);
+});

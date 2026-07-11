@@ -119,14 +119,20 @@ function readUsageEvents(file) {
   const events = [];
   let currentModel = null;
   const content = fs.readFileSync(file, "utf8");
+  const seenMessageIds = new Set();
   for (const line of content.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
       const item = JSON.parse(line);
       currentModel = readModelName(item) ?? currentModel;
       const timestamp = Date.parse(item?.timestamp);
-      const usage = item?.payload?.info?.last_token_usage;
+      const usage = item?.payload?.info?.last_token_usage ?? item?.message?.usage;
+      const messageId = item?.message?.id;
       if (Number.isFinite(timestamp) && usage) {
+        if (messageId) {
+          if (seenMessageIds.has(messageId)) continue;
+          seenMessageIds.add(messageId);
+        }
         events.push({ t: timestamp, model: currentModel ?? "unknown", ...normalizeUsage(usage) });
       }
     } catch {
@@ -149,7 +155,7 @@ function summarizeModelUsage(usages) {
 }
 
 function readModelName(item) {
-  const model = item?.payload?.model ?? item?.payload?.info?.model ?? item?.payload?.collaboration_mode?.settings?.model;
+  const model = item?.message?.model ?? item?.payload?.model ?? item?.payload?.info?.model ?? item?.payload?.collaboration_mode?.settings?.model;
   return typeof model === "string" && model.trim() ? model.trim() : null;
 }
 
@@ -180,7 +186,7 @@ function readLatestUsage(file) {
     }
     try {
       const item = JSON.parse(line);
-      const usage = item?.payload?.info?.total_token_usage ?? item?.payload?.info?.last_token_usage;
+      const usage = item?.payload?.info?.total_token_usage ?? item?.payload?.info?.last_token_usage ?? item?.message?.usage;
       if (usage) {
         latest = normalizeUsage(usage);
       }
@@ -192,11 +198,14 @@ function readLatestUsage(file) {
 }
 
 function normalizeUsage(usage) {
-  const input = readNumber(usage.input_tokens, 0);
-  const cached = readNumber(usage.cached_input_tokens, 0);
+  const cached = readNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens, 0);
+  let input = readNumber(usage.input_tokens, 0);
+  if (usage.cache_read_input_tokens !== undefined || usage.cacheReadInputTokens !== undefined) {
+    input = input + cached;
+  }
   const output = readNumber(usage.output_tokens, 0);
   const reasoning = readNumber(usage.reasoning_output_tokens, 0);
-  const total = readNumber(usage.total_tokens, input + cached + output + reasoning);
+  const total = readNumber(usage.total_tokens, input + output + reasoning);
   return { input, cached, output, reasoning, total };
 }
 
@@ -289,7 +298,8 @@ function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defa
 function defaultSessionsRoot() {
   return [
     path.join(os.homedir(), ".codex", "sessions"),
-    path.join(os.homedir(), ".codex", "archived_sessions")
+    path.join(os.homedir(), ".codex", "archived_sessions"),
+    path.join(os.homedir(), ".claude", "projects")
   ];
 }
 

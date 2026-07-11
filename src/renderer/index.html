@@ -12,7 +12,7 @@
         <header class="titlebar">
           <div class="brand">
             <span class="app-icon" aria-hidden="true"></span>
-            <strong>Codex</strong>
+            <strong>AIbar</strong>
             <time id="updatedAt" class="updated">--:--:--</time>
           </div>
           <div class="window-actions">
@@ -25,6 +25,12 @@
             <button id="pinButton" class="icon-button" title="置顶" aria-label="置顶">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 4h6l-1 6 4 4v2h-5v5h-2v-5H6v-2l4-4-1-6z" />
+              </svg>
+            </button>
+            <button id="settingsButton" class="icon-button" title="设置" aria-label="设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1l2.4 5.2L20 7.5l-3.6 4.2.6 5.3-5-2.4-5 2.4.6-5.3L4 7.5l5.6-1.3L12 1z" />
               </svg>
             </button>
             <button id="compactButton" class="icon-button" title="切换紧凑视图" aria-label="缩小" aria-pressed="false">
@@ -111,7 +117,7 @@
           <section class="token-grid" aria-label="Token 分析">
             <article class="token-card total-token interactive-card" data-expand-title="近 24 小时 Token" tabindex="0" aria-label="近 24 小时 Token，点击放大">
               <div class="card-head">
-                <span>近 24h Token</span>
+                <span id="tokenCardTitle">近 24h Token</span>
                 <b id="tokenCost">本地会话</b>
               </div>
               <strong id="totalTokens">--</strong>
@@ -121,9 +127,9 @@
                 <span id="outputSegment"></span>
               </div>
               <dl class="token-breakdown">
-                <div><dt>输入</dt><dd id="inputTokens">--</dd></div>
-                <div><dt>缓存</dt><dd id="cachedTokens">--</dd></div>
-                <div><dt>输出</dt><dd id="outputTokens">--</dd></div>
+                <div><dt id="inputLabel">输入</dt><dd id="inputTokens">--</dd></div>
+                <div><dt id="cachedLabel">缓存</dt><dd id="cachedTokens">--</dd></div>
+                <div><dt id="outputLabel">输出</dt><dd id="outputTokens">--</dd></div>
               </dl>
             </article>
 
@@ -210,6 +216,39 @@
         </section>
       </section>
     </main>
+    <section id="settingsPanel" class="settings-panel" aria-hidden="true">
+      <div class="settings-backdrop"></div>
+      <div class="settings-card" role="dialog" aria-label="设置">
+        <header class="settings-head">
+          <strong>设置</strong>
+          <button id="settingsClose" class="icon-button" title="关闭" aria-label="关闭设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 8l8 8M16 8l-8 8" />
+            </svg>
+          </button>
+        </header>
+        <div class="settings-body">
+          <label class="setting-row">
+            <span id="langLabel">语言 / Language</span>
+            <select id="langSelect">
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label class="setting-row">
+            <span id="themeLabel">主题</span>
+            <select id="themeSelect">
+              <option value="light" id="themeOptLight">亮色</option>
+              <option value="dark" id="themeOptDark">暗色</option>
+            </select>
+          </label>
+        </div>
+        <footer class="settings-foot">
+          <span id="settingsStatus" class="settings-status"></span>
+          <button id="settingsSave" class="settings-save-btn">保存</button>
+        </footer>
+      </div>
+    </section>
     <script src="./renderer.js"></script>
   </body>
 </html>

@@ -27,6 +27,7 @@ const elements = {
   longResetCompact: document.getElementById("longResetCompact"),
   resetCount: document.getElementById("resetCount"),
   resetExpiry: document.getElementById("resetExpiry"),
+  tokenCardTitle: document.getElementById("tokenCardTitle"),
   totalTokens: document.getElementById("totalTokens"),
   inputTokens: document.getElementById("inputTokens"),
   cachedTokens: document.getElementById("cachedTokens"),
@@ -58,6 +59,7 @@ let selectedModel = "all";
 const chartSeries = new Map();
 const HISTORY_VERSION = "2";
 let history = readHistory();
+let mergedModels = [];
 
 elements.closeButton.addEventListener("click", () => window.aiQuota.quitWindow());
 elements.compactButton.addEventListener("click", () => setCompact(!isCompact));
@@ -67,6 +69,7 @@ elements.pinButton.addEventListener("click", async () => {
   elements.pinButton.classList.toggle("active", pinned);
   elements.pinButton.title = pinned ? "取消置顶" : "置顶";
 });
+setupSettings();
 setupModelSelect();
 setupRingLayers();
 const trendCard = document.querySelector(".trend-card");
@@ -97,6 +100,263 @@ setCompact(isCompact);
 generateAndSaveTrayIcon();
 refresh();
 setInterval(refresh, 5 * 60_000);
+
+function setupSettings() {
+  const panel = document.getElementById("settingsPanel");
+  const langSelect = document.getElementById("langSelect");
+  const themeSelect = document.getElementById("themeSelect");
+
+  langSelect.value = localStorage.getItem("lang") || "zh";
+  themeSelect.value = localStorage.getItem("theme") || "light";
+  applyTheme(themeSelect.value);
+  applyLang(langSelect.value);
+
+  // Open settings
+  document.getElementById("settingsButton").addEventListener("click", () => {
+    langSelect.value = localStorage.getItem("lang") || "zh";
+    themeSelect.value = localStorage.getItem("theme") || "light";
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+  });
+
+  // Close
+  function closeSettings() {
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden", "true");
+  }
+  document.getElementById("settingsClose").addEventListener("click", closeSettings);
+  panel.querySelector(".settings-backdrop").addEventListener("click", closeSettings);
+
+  // Save
+  document.getElementById("settingsSave").addEventListener("click", () => {
+    const lang = langSelect.value;
+    const theme = themeSelect.value;
+
+    localStorage.setItem("lang", lang);
+    localStorage.setItem("theme", theme);
+
+    applyTheme(theme);
+    applyLang(lang);
+    closeSettings();
+    refresh();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && panel.classList.contains("open")) closeSettings();
+  });
+}
+
+function applyTheme(theme) {
+  try {
+  const root = document.documentElement;
+  const panel = document.querySelector(".panel");
+  const settingsCard = document.querySelector(".settings-card");
+  if (theme === "dark") {
+    root.style.setProperty("--ink", "#e0e5ea");
+    root.style.setProperty("--muted", "#8f99a3");
+    root.style.setProperty("--line", "rgba(255,255,255,0.10)");
+    root.style.setProperty("--panel", "rgba(22,28,34,0.94)");
+    root.style.setProperty("--card", "rgba(32,40,48,0.82)");
+    root.style.colorScheme = "dark";
+    if (panel) panel.style.background = "radial-gradient(circle at 12% 8%, rgba(50,58,68,0.7), transparent 34%), linear-gradient(145deg, rgba(28,36,44,0.94), rgba(20,26,32,0.92))";
+    if (settingsCard) { settingsCard.style.background = "rgba(36,44,52,0.98)"; settingsCard.style.color = "#d0d6dd"; }
+    // Update static element colors for dark mode
+    document.querySelectorAll(".metric, .token-card, .trend-card, .heat-card").forEach((el) => {
+      el.style.background = "rgba(36,44,52,0.74)";
+      el.style.borderColor = "rgba(255,255,255,0.08)";
+    });
+    document.querySelectorAll(".metric-title, .card-head span, .trend-head strong").forEach((el) => {
+      el.style.color = "#c8d0d8";
+    });
+    document.querySelectorAll(".metric-side strong, .token-card strong").forEach((el) => {
+      el.style.color = "#e8edf2";
+    });
+    document.querySelectorAll(".bar").forEach((el) => {
+      el.style.background = "rgba(255,255,255,0.08)";
+    });
+    document.querySelector(".brand strong").style.color = "#e0e5ea";
+    document.querySelector(".settings-body span, .setting-section-head span, .setting-row span").style.color = "#bcc4cc";
+    document.querySelectorAll(".setting-row input, .setting-row select").forEach((el) => {
+      el.style.background = "rgba(50,58,68,0.8)";
+      el.style.color = "#d0d6dd";
+      el.style.borderColor = "rgba(255,255,255,0.12)";
+    });
+  } else {
+    root.style.setProperty("--ink", "#1d232b");
+    root.style.setProperty("--muted", "#747d89");
+    root.style.setProperty("--line", "rgba(255,255,255,0.72)");
+    root.style.setProperty("--panel", "rgba(237,244,239,0.84)");
+    root.style.setProperty("--card", "rgba(255,255,255,0.68)");
+    root.style.colorScheme = "light";
+    if (panel) panel.style.background = "";
+    if (settingsCard) { settingsCard.style.background = ""; settingsCard.style.color = ""; }
+    // Reset inline styles
+    document.querySelectorAll(".metric, .token-card, .trend-card, .heat-card").forEach((el) => {
+      el.style.background = ""; el.style.borderColor = "";
+    });
+    document.querySelectorAll(".metric-title, .card-head span, .trend-head strong").forEach((el) => {
+      el.style.color = "";
+    });
+    document.querySelectorAll(".metric-side strong, .token-card strong").forEach((el) => {
+      el.style.color = "";
+    });
+    document.querySelectorAll(".bar").forEach((el) => {
+      el.style.background = "";
+    });
+    const brandStrong = document.querySelector(".brand strong");
+    if (brandStrong) brandStrong.style.color = "";
+    document.querySelectorAll(".setting-row input, .setting-row select").forEach((el) => {
+      el.style.background = ""; el.style.color = ""; el.style.borderColor = "";
+    });
+  }
+  } catch(e) { /* don't crash on theme */ }
+}
+
+const I18N = {
+  zh: {
+    resetSub: "可恢复 5 小时与周额度",
+    trendTitle: "Token 消耗趋势",
+    heatTitle: "每日Token消耗",
+    hitRate: "命中率分析",
+    modelUsage: "按模型 Token 用量",
+    token24h: "近 24h Token",
+    tokenInput: "输入",
+    tokenCache: "缓存",
+    tokenOutput: "输出",
+    refreshTip: "手动刷新",
+    pinTip: "置顶",
+    unpinTip: "取消置顶",
+    compactTip: "切换紧凑视图",
+    expandTip: "展开完整视图",
+    closeTip: "关闭",
+    settingsTitle: "设置",
+    langLabel: "语言 / Language",
+    themeLabel: "主题",
+    themeLight: "亮色",
+    themeDark: "暗色",
+    saveBtn: "保存",
+    settingsClose: "关闭设置",
+    allModels: "全部模型",
+    unknownModel: "未知模型",
+    noData: "无数据",
+    uncomputable: "无法分析",
+    waitingData: "等待数据",
+    refreshFailed: "读取失败",
+    expireUnknown: "到期未知",
+    resetCards: "重置卡",
+    shortLabel: "5小时",
+    weekLabel: "周限额",
+    remaining: "剩余",
+    low: "低",
+    high: "高",
+    hitGood: "良好",
+    hitNormal: "一般",
+    hitLow: "偏低",
+    trend24Summary: "数据积累中",
+    trend7Summary: "日消耗",
+    trendHover: "悬浮曲线查看数值",
+    sourceLocal: "本地会话",
+    sourceAPI: "接口数据",
+    sourceMerged: "Codex + Antigravity",
+    sourceAG: "Antigravity · 估算",
+    hitSummaryGood: "上下文复用充分，输入成本压力较低。",
+    hitSummaryMid: "缓存有贡献，仍可继续稳定提示结构。",
+    hitSummaryLow: "缓存复用偏少，长上下文任务成本更容易上升。",
+    modelCount: (n) => `${n} 个模型`,
+    noLocalData: "暂无本地会话数据",
+    shellTitle: "点击空白处刷新",
+    resetCount: (n) => `${n} 张`,
+    tokenCostSession: (n) => `近 24h · ${n} 会话`,
+  },
+  en: {
+    resetSub: "Restores 5h & weekly quota",
+    trendTitle: "Token Trend",
+    heatTitle: "Daily Token Usage",
+    hitRate: "Cache Hit Rate",
+    modelUsage: "Token by Model",
+    token24h: "24h Tokens",
+    tokenInput: "Input",
+    tokenCache: "Cache",
+    tokenOutput: "Output",
+    refreshTip: "Refresh",
+    pinTip: "Pin",
+    unpinTip: "Unpin",
+    compactTip: "Compact view",
+    expandTip: "Expand view",
+    closeTip: "Close",
+    settingsTitle: "Settings",
+    langLabel: "Language",
+    themeLabel: "Theme",
+    themeLight: "Light",
+    themeDark: "Dark",
+    saveBtn: "Save",
+    settingsClose: "Close settings",
+    allModels: "All Models",
+    unknownModel: "Unknown",
+    noData: "No data",
+    uncomputable: "N/A",
+    waitingData: "Waiting",
+    refreshFailed: "Refresh failed",
+    expireUnknown: "Unknown",
+    resetCards: "Reset Cards",
+    shortLabel: "5 Hours",
+    weekLabel: "Weekly",
+    remaining: "Remaining",
+    low: "Low",
+    high: "High",
+    hitGood: "Good",
+    hitNormal: "Average",
+    hitLow: "Low",
+    trend24Summary: "Accumulating",
+    trend7Summary: "Daily",
+    trendHover: "Hover to see values",
+    sourceLocal: "Local sessions",
+    sourceAPI: "API data",
+    sourceMerged: "Codex + Antigravity",
+    sourceAG: "Antigravity · Estimated",
+    hitSummaryGood: "Strong context reuse keeps input costs low.",
+    hitSummaryMid: "Cache helps, consider stabilizing prompt structure.",
+    hitSummaryLow: "Low cache reuse may increase costs on long-context tasks.",
+    modelCount: (n) => `${n} models`,
+    noLocalData: "No local session data",
+    shellTitle: "Click to refresh",
+    resetCount: (n) => `${n} cards`,
+    tokenCostSession: (n) => `24h · ${n} sessions`,
+  }
+};
+let i18n = I18N.zh;
+
+function t(key, ...args) {
+  let val = i18n[key];
+  if (typeof val === "function") return val(...args);
+  return val !== undefined ? val : key;
+}
+
+function applyLang(lang) {
+  try {
+    i18n = I18N[lang] || I18N.zh;
+    document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+    const set = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
+    const attr = (id, key) => { const el = document.getElementById(id); if (el) el.title = t(key); };
+    set("resetSub", "resetSub");
+    set("langLabel", "langLabel");
+    set("themeLabel", "themeLabel");
+    set("settingsSave", "saveBtn");
+    set("shortLabel", "shortLabel");
+    set("longLabel", "weekLabel");
+    const optLight = document.querySelector("#themeSelect option[value=light]");
+    const optDark = document.querySelector("#themeSelect option[value=dark]");
+    if (optLight) optLight.textContent = t("themeLight");
+    if (optDark) optDark.textContent = t("themeDark");
+    const st = document.querySelector(".settings-head strong");
+    if (st) st.textContent = t("settingsTitle");
+    attr("refreshButton", "refreshTip");
+    attr("pinButton", "pinTip");
+    attr("compactButton", "compactTip");
+    attr("closeButton", "closeTip");
+    if (lastSnapshot) render(lastSnapshot);
+  } catch(e) { /* don't crash on i18n */ }
+}
 
 async function refresh() {
   if (isRefreshing) {
@@ -129,18 +389,27 @@ async function setCompact(compact) {
 
 
 function render(snapshot) {
-  lastSnapshot = snapshot;
-  const quota = snapshot?.quota;
-  elements.updatedAt.textContent = snapshot?.error ? "读取失败" : formatTime(snapshot?.updatedAt ?? Date.now());
-  elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));
+  try {
+    lastSnapshot = snapshot;
+    const quota = snapshot?.quota;
+    elements.updatedAt.textContent = snapshot?.error ? t("refreshFailed") : formatTime(snapshot?.updatedAt ?? Date.now());
+    elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));
 
-  renderWindow("short", quota?.shortWindow, "5小时");
-  renderWindow("long", quota?.longWindow, "周限额");
-  renderRing(quota);
-  renderResetCredits(snapshot?.resetCredits, quota?.resetCard);
-  renderTokenStats(quota?.tokenStats, snapshot?.localTokenUsage?.modelUsage);
-  recordHistory(quota);
-  renderHistory();
+    renderWindow("short", quota?.shortWindow, "5小时");
+    renderWindow("long", quota?.longWindow, "周限额");
+    renderRing(quota);
+    renderResetCredits(snapshot?.resetCredits, quota?.resetCard);
+
+    mergedModels = buildMergedModels(snapshot);
+    const tokenData = getTokenForModel(snapshot, selectedModel);
+    renderTokenStats(tokenData, mergedModels);
+
+    recordHistory(quota);
+    renderHistory();
+  } catch (e) {
+    elements.updatedAt.textContent = "ERR:" + (e.message || "").slice(0, 30);
+    elements.updatedAt.classList.add("error");
+  }
 }
 
 function setupModelSelect() {
@@ -179,31 +448,57 @@ function setupModelSelect() {
 
 function syncModelSelect(modelUsage) {
   const models = Array.isArray(modelUsage) ? modelUsage : [];
-  const allowed = new Set(["all", ...models.map((item) => item.model)]);
+  const modelKeys = models.map((m) => m.sourceModel || m.model);
+  const allowed = new Set(["all", ...modelKeys]);
   if (!allowed.has(selectedModel)) selectedModel = "all";
   elements.modelPickerMenu.replaceChildren();
-  for (const item of [{ model: "all", label: "\u5168\u90e8\u6a21\u578b" }, ...models]) {
-    const option = document.createElement("button");
-    option.type = "button";
-    option.className = "model-picker-option";
-    option.setAttribute("role", "option");
-    option.setAttribute("aria-selected", String(item.model === selectedModel));
-    option.classList.toggle("selected", item.model === selectedModel);
-    option.textContent = modelLabel(item);
-    option.addEventListener("click", () => {
-      selectedModel = item.model;
-      closeModelPicker();
-      renderTokenStats(lastSnapshot?.quota?.tokenStats, lastSnapshot?.localTokenUsage?.modelUsage);
-      renderHistory();
+  // Add "all" option
+  const allOption = buildModelOption({ model: "all", label: "\u5168\u90e8\u6a21\u578b" });
+  elements.modelPickerMenu.append(allOption);
+  // Add each model with source prefix
+  for (const item of models) {
+    const opt = buildModelOption({
+      model: item.sourceModel || item.model,
+      label: item.displayLabel || `[${item.source}] ${item.model}`,
+      source: item.source
     });
-    elements.modelPickerMenu.append(option);
+    elements.modelPickerMenu.append(opt);
   }
-  const selected = { model: selectedModel, label: selectedModel === "all" ? "\u5168\u90e8\u6a21\u578b" : null };
-  elements.modelPickerLabel.textContent = modelLabel(selected);
+  // Update trigger label
+  const sel = models.find((m) => (m.sourceModel || m.model) === selectedModel);
+  elements.modelPickerLabel.textContent = selectedModel === "all" ? "\u5168\u90e8\u6a21\u578b" : (sel?.displayLabel || selectedModel);
+}
+
+function buildModelOption(item) {
+  const option = document.createElement("button");
+  option.type = "button";
+  option.className = "model-picker-option";
+  option.setAttribute("role", "option");
+  option.setAttribute("aria-selected", String(item.model === selectedModel));
+  option.classList.toggle("selected", item.model === selectedModel);
+  option.textContent = item.label || item.model;
+  if (item.source) option.dataset.source = item.source;
+  option.addEventListener("click", () => {
+    selectedModel = item.model;
+    closeModelPicker();
+    if (lastSnapshot) {
+      const data = getTokenForModel(lastSnapshot, selectedModel);
+      renderTokenStats(data, mergedModels);
+    }
+    renderHistory();
+  });
+  return option;
 }
 
 function modelLabel(item) {
   return item.label ?? (item.model === "unknown" ? "\u672a\u77e5\u6a21\u578b" : item.model);
+}
+
+function sourceLabel(stats) {
+  if (!stats) return "\u65e0\u6570\u636e";
+  if (stats.source === "antigravity") return "Antigravity \u00b7 \u4f30\u7b97";
+  if (stats.source === "merged") return "Codex + Antigravity";
+  return stats.source === "localSessions" ? "\u672c\u5730\u4f1a\u8bdd" : "\u63a5\u53e3\u6570\u636e";
 }
 
 function openModelPicker() {
@@ -217,14 +512,97 @@ function closeModelPicker() {
   elements.modelPickerTrigger.setAttribute("aria-expanded", "false");
 }
 
+function buildMergedModels(snapshot) {
+  const allModels = [];
+
+  function addModels(list, sourceTag) {
+    if (!Array.isArray(list)) return;
+    for (const m of list) {
+      allModels.push({
+        ...m,
+        source: sourceTag,
+        sourceModel: `${sourceTag}:${m.model}`,
+        displayLabel: `[${sourceTag}] ${m.model}`
+      });
+    }
+  }
+
+  addModels(snapshot?.localTokenUsage?.modelUsage, "C");
+  addModels(snapshot?.quota?.tokenStats?.modelUsage, "C");
+  addModels(snapshot?.antigravityTokenUsage?.modelUsage, "A");
+
+  const seen = new Set();
+  return allModels.filter((m) => {
+    if (seen.has(m.sourceModel)) return false;
+    seen.add(m.sourceModel);
+    return true;
+  }).sort((a, b) => b.total - a.total);
+}
+
+function getTokenForModel(snapshot, modelKey) {
+  if (modelKey === "all") return mergeAllTokens(snapshot);
+  const [source, ...rest] = modelKey.split(":");
+  const model = rest.join(":");
+  if (source === "C") return getSourceModelData(snapshot?.localTokenUsage, snapshot?.quota?.tokenStats, model, "codex");
+  if (source === "A") return getSourceModelData(snapshot?.antigravityTokenUsage, null, model, "antigravity");
+  return mergeAllTokens(snapshot);
+}
+
+function getSourceModelData(primary, fallback, model, source) {
+  const modelData = primary?.modelUsage?.find((m) => m.model === model)
+    || fallback?.modelUsage?.find((m) => m.model === model);
+  if (modelData) return { ...modelData, source, cacheHitRate: (modelData.cached === null || modelData.cached === undefined || modelData.input === 0) ? null : Math.round((modelData.cached / modelData.input) * 100) };
+  return null;
+}
+
+function mergeAllTokens(snapshot) {
+  let input = 0, cached = 0, output = 0, reasoning = 0, total = 0, hasData = false;
+  let hitRateInput = 0;
+  let hitRateCached = 0;
+
+  function add(src, isAntigravity = false) {
+    if (src?.total != null) {
+      hasData = true;
+      input += src.input || 0;
+      cached += src.cached || 0;
+      output += src.output || 0;
+      reasoning += src.reasoning || 0;
+      total += src.total || 0;
+
+      // Exclude Antigravity from global hit rate calculation since it cannot analyze cache hit rate
+      if (!isAntigravity && src.cached !== null && src.cached !== undefined) {
+        hitRateInput += src.input || 0;
+        hitRateCached += src.cached || 0;
+      }
+    }
+  }
+
+  const cs = snapshot?.quota?.tokenStats, cl = snapshot?.localTokenUsage;
+  if (cs?.total != null) add(cs); else if (cl?.total != null) add(cl);
+  add(snapshot?.antigravityTokenUsage, true);
+
+  if (!hasData) return null;
+  return {
+    source: "merged",
+    input,
+    cached,
+    output,
+    reasoning,
+    total,
+    cacheHitRate: hitRateInput > 0 ? Math.round((hitRateCached / hitRateInput) * 100) : null,
+    modelUsage: mergedModels,
+    sessions: null
+  };
+}
+
 function renderModelUsage(modelUsage) {
   const models = Array.isArray(modelUsage) ? modelUsage : [];
   elements.modelUsageList.replaceChildren();
-  elements.modelUsageSummary.textContent = models.length ? `${models.length} 个模型` : "近 24 小时";
+  elements.modelUsageSummary.textContent = models.length ? t("modelCount", models.length) : "24h";
   if (!models.length) {
     const empty = document.createElement("span");
     empty.className = "model-empty";
-    empty.textContent = "暂无本地会话数据";
+    empty.textContent = t("noLocalData");
     elements.modelUsageList.append(empty);
     return;
   }
@@ -244,7 +622,7 @@ function renderWindow(prefix, quotaWindow, fallbackLabel) {
   const tone = toneForPercent(percent);
   elements[`${prefix}Label`].textContent = quotaWindow?.label || fallbackLabel;
   elements[`${prefix}Value`].textContent = percent == null ? "--%" : `${percent}%`;
-  elements[`${prefix}Reset`].textContent = quotaWindow?.resetsAt ? formatDateTime(quotaWindow.resetsAt) : "等待数据";
+  elements[`${prefix}Reset`].textContent = quotaWindow?.resetsAt ? formatDateTime(quotaWindow.resetsAt) : t("waitingData");
   elements[`${prefix}ResetCompact`].textContent = quotaWindow?.resetsAt ? formatCompactDate(quotaWindow.resetsAt) : "--";
   renderBar(elements[`${prefix}Bar`], percent, tone);
 }
@@ -256,27 +634,28 @@ function renderRing(quota) {
   elements.ringLong.textContent = long == null ? "--%" : `${long}%`;
   elements.shortRingArc.style.strokeDasharray = `${clamp(short ?? 0)} 100`;
   elements.longRingArc.style.strokeDasharray = `${clamp(long ?? 0)} 100`;
-  elements.shortRingArc.setAttribute("aria-label", `5 小时额度，剩余 ${short ?? "--"}%`);
-  elements.longRingArc.setAttribute("aria-label", `7 天额度，剩余 ${long ?? "--"}%`);
+  elements.shortRingArc.setAttribute("aria-label", `${t("shortLabel")} ${t("remaining")} ${short ?? "--"}%`);
+  elements.longRingArc.setAttribute("aria-label", `${t("weekLabel")} ${t("remaining")} ${long ?? "--"}%`);
 }
 
 function renderResetCredits(resetCredits, resetCard) {
   const availableCount = resetCredits?.availableCount ?? resetCard?.count;
   const first = resetCredits?.credits?.[0];
   const expiresAt = first?.expiresAt ?? resetCard?.expiresAt;
-  elements.resetCount.textContent = availableCount == null ? "-- 张" : `${availableCount} 张`;
-  elements.resetExpiry.textContent = expiresAt ? formatDateTime(expiresAt) : "到期未知";
+  elements.resetCount.textContent = availableCount == null ? "--" : t("resetCount", availableCount);
+  elements.resetExpiry.textContent = expiresAt ? formatDateTime(expiresAt) : t("expireUnknown");
 }
 
 function renderTokenStats(stats, modelUsage) {
+  elements.tokenCardTitle.textContent = t("token24h");
   syncModelSelect(modelUsage);
-  const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => item.model === selectedModel);
+  const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => (item.sourceModel || item.model) === selectedModel);
   if (selectedUsage) {
     stats = {
       ...stats,
       ...selectedUsage,
       source: "localModel",
-      cacheHitRate: Math.round((selectedUsage.cached / Math.max(1, selectedUsage.input)) * 100)
+      cacheHitRate: (selectedUsage.cached == null || selectedUsage.input === 0) ? null : Math.round((selectedUsage.cached / selectedUsage.input) * 100)
     };
   }
   const hasTokenData =
@@ -294,21 +673,25 @@ function renderTokenStats(stats, modelUsage) {
   elements.inputTokens.textContent = typeof stats?.input === "number" ? formatToken(input) : "--";
   elements.cachedTokens.textContent = typeof stats?.cached === "number" ? formatToken(cached) : "--";
   elements.outputTokens.textContent = typeof stats?.output === "number" ? formatToken(output) : "--";
+  document.getElementById("inputLabel").textContent = t("tokenInput");
+  document.getElementById("cachedLabel").textContent = t("tokenCache");
+  document.getElementById("outputLabel").textContent = t("tokenOutput");
   elements.tokenCost.textContent = hasTokenData
-    ? stats?.source === "localSessions"
-      ? `近 24h · ${stats.sessions ?? "--"} 会话`
-      : "接口数据"
+    ? sourceLabel(stats)
     : stats?.error
-      ? "读取失败"
-      : "接口未返回";
-  elements.cacheHitRate.textContent = hitRate == null ? "--%" : `${hitRate}%`;
-  elements.hitDelta.textContent = hitRate == null ? "暂无数据" : hitRate >= 60 ? "良好" : hitRate >= 30 ? "一般" : "偏低";
-  elements.hitSummary.textContent =
-    hitRate == null
-      ? stats?.error
-        ? `account/usage/read 未返回：${shortError(stats.error)}`
-        : "当前 usage 接口没有返回输入、输出、缓存或命中率字段。"
-      : hitSummary(hitRate);
+      ? t("refreshFailed")
+      : t("noData");
+  if (hitRate == null) {
+    elements.cacheHitRate.classList.add("text-label");
+    elements.cacheHitRate.textContent = t("uncomputable");
+  } else {
+    elements.cacheHitRate.classList.remove("text-label");
+    elements.cacheHitRate.textContent = `${hitRate}%`;
+  }
+  elements.hitDelta.textContent = hitRate == null ? t("noData") : hitRate >= 60 ? t("hitGood") : hitRate >= 30 ? t("hitNormal") : t("hitLow");
+  elements.hitSummary.textContent = hitRate == null
+    ? (stats?.error ? `account/usage/read: ${shortError(stats.error)}` : t("noData"))
+    : hitSummary(hitRate);
 
   const uncachedInput = Math.max(0, input - cached);
   const knownTotal = Math.max(1, input + output);
@@ -344,20 +727,83 @@ function recordHistory(quota) {
 
 async function renderHistory() {
   const modelForRender = selectedModel;
-  let daily;
-  let hourly;
-  try {
-    const historyData = await window.aiQuota.readTokenHistory(modelForRender);
-    daily = historyData.daily;
-    hourly = historyData.hourly;
-  } catch {
-    daily = {};
-    hourly = [];
-  }
-  if (modelForRender !== selectedModel) return;
+  let daily = {};
+  let hourly = [];
 
+  if (modelForRender === "all") {
+    try {
+      const [codexData, agData] = await Promise.allSettled([
+        window.aiQuota.readTokenHistory("all"),
+        window.aiQuota.readAntigravityHistory("all")
+      ]);
+      daily = mergeDailyMaps(
+        codexData.status === "fulfilled" ? codexData.value.daily : {},
+        agData.status === "fulfilled" ? agData.value.daily : {}
+      );
+      hourly = mergeHourlyBuckets(
+        codexData.status === "fulfilled" ? codexData.value.hourly : [],
+        agData.status === "fulfilled" ? agData.value.hourly : []
+      );
+    } catch {
+      daily = {};
+      hourly = [];
+    }
+  } else {
+    // Single model — determine source
+    const [source] = modelForRender.split(":");
+    try {
+      let historyData;
+      if (source === "A") {
+        historyData = await window.aiQuota.readAntigravityHistory(modelForRender.split(":").slice(1).join(":"));
+      } else {
+        // Codex
+        historyData = await window.aiQuota.readTokenHistory(modelForRender.split(":").slice(1).join(":"));
+      }
+      daily = historyData.daily;
+      hourly = historyData.hourly;
+    } catch {
+      daily = {};
+      hourly = [];
+    }
+  }
+
+  if (modelForRender !== selectedModel) return;
   renderTrendWithData(daily, hourly);
   renderHeatmapWithData(daily);
+}
+
+function mergeDailyMaps(...maps) {
+  const result = {};
+  for (const map of maps) {
+    for (const [key, val] of Object.entries(map)) {
+      if (!result[key]) result[key] = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+      result[key].input += val.input || 0;
+      result[key].cached += val.cached || 0;
+      result[key].output += val.output || 0;
+      result[key].reasoning += val.reasoning || 0;
+      result[key].total += val.total || 0;
+    }
+  }
+  return result;
+}
+
+function mergeHourlyBuckets(...bucketArrays) {
+  const maxLen = Math.max(...bucketArrays.map((a) => a.length), 0);
+  if (maxLen === 0) return [];
+  // Use the bucket array with the most entries as the base, or create new
+  const base = bucketArrays.find((a) => a.length === maxLen) || [];
+  const result = base.map((b) => ({ ...b }));
+  for (const buckets of bucketArrays) {
+    if (buckets === base) continue;
+    for (let i = 0; i < Math.min(result.length, buckets.length); i++) {
+      result[i].input += buckets[i].input || 0;
+      result[i].cached += buckets[i].cached || 0;
+      result[i].output += buckets[i].output || 0;
+      result[i].reasoning += buckets[i].reasoning || 0;
+      result[i].total += buckets[i].total || 0;
+    }
+  }
+  return result;
 }
 
 function renderTrendWithData(daily, hourly) {
@@ -387,11 +833,11 @@ function renderTrendWithData(daily, hourly) {
 
   const current24 = recent.reduce((sum, hour) => sum + hour.value, 0);
   const weekTotal = days.reduce((sum, day) => sum + day.value, 0);
-  elements.trend24Summary.textContent = recent.length ? `合计 ${formatToken(current24)}` : "等待刷新";
-  elements.trend7Summary.textContent = `合计 ${formatToken(weekTotal)}`;
-  elements.trendDelta.textContent = "24 小时 / 7 天";
+  elements.trend24Summary.textContent = recent.length ? `∑ ${formatToken(current24)}` : t("trend24Summary");
+  elements.trend7Summary.textContent = `∑ ${formatToken(weekTotal)}`;
+  elements.trendDelta.textContent = "24h / 7d";
   elements.trendTotal.textContent = `24h ${formatToken(current24)} · 7d ${formatToken(weekTotal)}`;
-  elements.trendAverage.textContent = `7 天日均 ${formatToken(Math.round(weekTotal / 7))}`;
+  elements.trendAverage.textContent = `7d avg ${formatToken(Math.round(weekTotal / 7))}`;
 }
 
 function renderHeatmapWithData(daily) {
@@ -420,7 +866,7 @@ function renderHeatmapWithData(daily) {
   }
 
   const lastToken = tokenValues.at(-1);
-  elements.hitTrendLabel.textContent = lastToken == null ? "暂无数据" : `当前 ${formatToken(lastToken)}`;
+  elements.hitTrendLabel.textContent = lastToken == null ? t("noData") : formatToken(lastToken);
   elements.heatDateStart.textContent = formatMonthDay(days[0].d);
   elements.heatDateEnd.textContent = formatMonthDay(days[days.length - 1].d);
 }
@@ -610,13 +1056,9 @@ function toneForPercent(percent) {
 }
 
 function hitSummary(hitRate) {
-  if (hitRate >= 70) {
-    return "上下文复用充分，输入成本压力较低。";
-  }
-  if (hitRate >= 40) {
-    return "缓存有贡献，仍可继续稳定提示结构。";
-  }
-  return "缓存复用偏少，长上下文任务成本更容易上升。";
+  if (hitRate >= 70) return t("hitSummaryGood");
+  if (hitRate >= 40) return t("hitSummaryMid");
+  return t("hitSummaryLow");
 }
 
 function formatToken(value) {

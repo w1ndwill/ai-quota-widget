@@ -6,6 +6,8 @@ const fs = require("node:fs");
 const { CodexService } = require("./codex-service");
 const { readResetCredits } = require("./reset-credits-service");
 const { readLocalTokenUsage, readDailyTokenHistory, readHourlyTokenHistory, readTokenHistory } = require("./token-usage-service");
+const { readLocalTokenUsage: readAntigravityUsage, readDailyTokenHistory: readAntigravityDailyHistory, readHourlyTokenHistory: readAntigravityHourlyHistory, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
+
 
 // Configure portable userData directory inside project folder (D drive) instead of C drive
 const appDir = app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
@@ -82,11 +84,20 @@ function createTray() {
 }
 
 
+let cachedLocalUsage = null;
+let cachedAntigravityUsage = null;
+let lastLocalUsageTime = 0;
+let lastAntigravityUsageTime = 0;
+const CACHE_TTL = 15000; // 15 seconds cache
+
 async function readSnapshot() {
   const errors = [];
   let quota = codex.getCachedQuota();
   let resetCredits = null;
   let localTokenUsage = null;
+  let antigravityTokenUsage = null;
+
+  const now = Date.now();
 
   const [quotaResult, resetResult] = await Promise.allSettled([
     codex.readQuota(),
@@ -105,8 +116,29 @@ async function readSnapshot() {
     errors.push(resetResult.reason.message);
   }
 
+  // Handle Antigravity Usage with 15s cache
   try {
-    localTokenUsage = readLocalTokenUsage();
+    if (cachedAntigravityUsage && (now - lastAntigravityUsageTime < CACHE_TTL)) {
+      antigravityTokenUsage = cachedAntigravityUsage;
+    } else {
+      antigravityTokenUsage = readAntigravityUsage();
+      cachedAntigravityUsage = antigravityTokenUsage;
+      lastAntigravityUsageTime = now;
+    }
+  } catch (error) {
+    errors.push(error.message);
+  }
+
+  // Handle Local Token Usage with 15s cache
+  try {
+    if (cachedLocalUsage && (now - lastLocalUsageTime < CACHE_TTL)) {
+      localTokenUsage = cachedLocalUsage;
+    } else {
+      localTokenUsage = readLocalTokenUsage();
+      cachedLocalUsage = localTokenUsage;
+      lastLocalUsageTime = now;
+    }
+
     if (quota?.tokenStats && quota.tokenStats.total == null && localTokenUsage?.total != null) {
       quota = {
         ...quota,
@@ -126,6 +158,7 @@ async function readSnapshot() {
     quota,
     resetCredits,
     localTokenUsage,
+    antigravityTokenUsage,
     error: errors[0] ?? null,
     errors,
     updatedAt: Date.now()
@@ -187,6 +220,27 @@ app.whenReady().then(() => {
   ipcMain.handle("tokens:history", (_event, model) => {
     try {
       return readTokenHistory({ model, days: 45 });
+    } catch {
+      return { daily: {}, hourly: [] };
+    }
+  });
+  ipcMain.handle("antigravity:dailyHistory", (_event, model) => {
+    try {
+      return readAntigravityDailyHistory({ model, days: 45 });
+    } catch {
+      return {};
+    }
+  });
+  ipcMain.handle("antigravity:hourlyHistory", (_event, model) => {
+    try {
+      return readAntigravityHourlyHistory({ model });
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle("antigravity:history", (_event, model) => {
+    try {
+      return readAntigravityHistory({ model, days: 45 });
     } catch {
       return { daily: {}, hourly: [] };
     }

@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("aiQuota", {
   readDailyTokenHistory: (model) => ipcRenderer.invoke("tokens:dailyHistory", model),
   readHourlyTokenHistory: (model) => ipcRenderer.invoke("tokens:hourlyHistory", model),
   readTokenHistory: (model) => ipcRenderer.invoke("tokens:history", model),
+  readAntigravityDailyHistory: (model) => ipcRenderer.invoke("antigravity:dailyHistory", model),
+  readAntigravityHourlyHistory: (model) => ipcRenderer.invoke("antigravity:hourlyHistory", model),
+  readAntigravityHistory: (model) => ipcRenderer.invoke("antigravity:history", model),
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),
   onUpdated: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);

@@ -14,8 +14,35 @@ class CodexService extends EventEmitter {
     this.initialized = null;
     this.nextId = 1;
     this.pending = new Map();
-    this.lastSnapshot = null;
+    this.cacheFilePath = path.join(
+      process.env.USERPROFILE || process.env.HOME || "",
+      ".gemini",
+      "antigravity",
+      "quota_cache.json"
+    );
+    this.lastSnapshot = this.loadCache();
     this.lastError = null;
+  }
+
+  loadCache() {
+    try {
+      if (fs.existsSync(this.cacheFilePath)) {
+        const content = fs.readFileSync(this.cacheFilePath, "utf8");
+        return JSON.parse(content);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  saveCache(snapshot) {
+    try {
+      if (!snapshot) return;
+      const dir = path.dirname(this.cacheFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(this.cacheFilePath, JSON.stringify(snapshot), "utf8");
+    } catch (e) {}
   }
 
   async readQuota() {
@@ -28,7 +55,41 @@ class CodexService extends EventEmitter {
     } catch (error) {
       usageError = error.message;
     }
-    this.lastSnapshot = normalizeCodexQuota({ ...response, accountUsage: usage, usageError });
+    const snapshot = normalizeCodexQuota({ ...response, accountUsage: usage, usageError });
+    
+    // Physics conflict correction:
+    if (snapshot?.shortWindow) {
+      const short = snapshot.shortWindow;
+      const now = Date.now();
+      if (short.usedPercent < 100 && short.resetsAt && now < short.resetsAt) {
+        short.usedPercent = 100;
+        short.remainingPercent = 0;
+        if (snapshot.quotaCard) {
+          snapshot.quotaCard.remainingPercent = 0;
+          snapshot.quotaCard.usedPercent = 100;
+        }
+      }
+    }
+
+    // Anti-pollution: keep correct rate limits if fake ones are pulled during lock period
+    if (this.lastSnapshot?.shortWindow && snapshot?.shortWindow) {
+      const oldShort = this.lastSnapshot.shortWindow;
+      const newShort = snapshot.shortWindow;
+      const now = Date.now();
+      if (oldShort.resetsAt && now < oldShort.resetsAt) {
+        if (newShort.usedPercent < oldShort.usedPercent) {
+          if (!newShort.resetsAt || newShort.resetsAt <= oldShort.resetsAt) {
+            snapshot.shortWindow = this.lastSnapshot.shortWindow;
+            snapshot.longWindow = this.lastSnapshot.longWindow;
+            snapshot.quotaCard = this.lastSnapshot.quotaCard;
+            snapshot.resetCard = this.lastSnapshot.resetCard;
+          }
+        }
+      }
+    }
+
+    this.lastSnapshot = snapshot;
+    this.saveCache(snapshot);
     this.lastError = null;
     return this.lastSnapshot;
   }
@@ -173,7 +234,37 @@ class CodexService extends EventEmitter {
         accountUsage: this.lastSnapshot?.accountUsage ?? null,
         usageError: this.lastSnapshot?.usageError ?? null
       });
+
+      // Physics conflict correction:
+      if (snapshot?.shortWindow) {
+        const short = snapshot.shortWindow;
+        const now = Date.now();
+        if (short.usedPercent < 100 && short.resetsAt && now < short.resetsAt) {
+          short.usedPercent = 100;
+          short.remainingPercent = 0;
+          if (snapshot.quotaCard) {
+            snapshot.quotaCard.remainingPercent = 0;
+            snapshot.quotaCard.usedPercent = 100;
+          }
+        }
+      }
+
+      // Anti-pollution: ignore temporary rate limit pushes during lock period (e.g. mock results from routed models)
+      if (this.lastSnapshot?.shortWindow && snapshot?.shortWindow) {
+        const oldShort = this.lastSnapshot.shortWindow;
+        const newShort = snapshot.shortWindow;
+        const now = Date.now();
+        if (oldShort.resetsAt && now < oldShort.resetsAt) {
+          if (newShort.usedPercent < oldShort.usedPercent) {
+            if (!newShort.resetsAt || newShort.resetsAt <= oldShort.resetsAt) {
+              return;
+            }
+          }
+        }
+      }
+
       this.lastSnapshot = snapshot;
+      this.saveCache(snapshot);
       this.emit("quota-updated", snapshot);
     }
   }
