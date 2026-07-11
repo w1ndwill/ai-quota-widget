@@ -28,7 +28,6 @@
     "artifactName": "AI-Quota-Setup-${version}.${ext}",
     "files": [
       "src/**/*",
-      "README.md",
       "package.json"
     ],
     "directories": {

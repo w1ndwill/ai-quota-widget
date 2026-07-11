@@ -9,6 +9,21 @@ const { readLocalTokenUsage, readDailyTokenHistory, readHourlyTokenHistory, read
 const { readLocalTokenUsage: readAntigravityUsage, readDailyTokenHistory: readAntigravityDailyHistory, readHourlyTokenHistory: readAntigravityHourlyHistory, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
 
 
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on("second-instance", () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+
 // Configure portable userData directory inside project folder (D drive) instead of C drive
 const appDir = app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
 const userDataPath = path.join(appDir, ".userdata");
