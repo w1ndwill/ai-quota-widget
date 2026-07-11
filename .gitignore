@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+.npmrc
+.agent/
+.agents/
+.userdata/
+.cache/
+dist/
+release/
+release-next/
+release-candidate/
+release-widget/
+*.log
+Thumbs.db
+.DS_Store
+AGENTS.md

@@ -1,0 +1,49 @@
+{
+  "name": "ai-quota-widget",
+  "version": "1.0.0",
+  "description": "Codex 额度桌面悬浮窗",
+  "author": "w1ndwill",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "build:win": "electron-builder --win dir",
+    "release:win": "electron-builder --win nsis"
+  },
+  "keywords": [
+    "ai-quota",
+    "codex",
+    "electron",
+    "desktop-widget"
+  ],
+  "devDependencies": {
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.w1ndwill.ai-quota-widget",
+    "productName": "AI 额度",
+    "artifactName": "AI-Quota-Setup-${version}.${ext}",
+    "files": [
+      "src/**/*",
+      "README.md",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "afterPack": "scripts/after-pack.js",
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "allowScripts": {}
+}
