@@ -139,6 +139,7 @@ async function setupSettings() {
     console.error("Failed to read settings from main process", e);
   }
 
+  applyConfigEffects(config);
   document.body.classList.toggle("no-codex", !config.enableCodex);
 
   langSelect.value = localStorage.getItem("lang") || "zh";
@@ -184,6 +185,7 @@ async function setupSettings() {
     };
 
     config = { ...config, ...newConfig };
+    applyConfigEffects(config);
     document.body.classList.toggle("no-codex", !config.enableCodex);
 
     try {
@@ -402,6 +404,19 @@ async function refresh() {
   }
 }
 
+function applyConfigEffects(config) {
+  if (!config) return;
+  const btn = elements.compactButton || document.getElementById("compactButton");
+  if (!config.enableCodex) {
+    if (btn) btn.style.display = "none";
+    if (isCompact) {
+      setCompact(false);
+    }
+  } else {
+    if (btn) btn.style.display = "";
+  }
+}
+
 async function setCompact(compact) {
   clearCardFocus();
   isCompact = compact;
@@ -422,6 +437,7 @@ function render(snapshot) {
   try {
     lastSnapshot = snapshot;
     if (snapshot?.config) {
+      applyConfigEffects(snapshot.config);
       document.body.classList.toggle("no-codex", !snapshot.config.enableCodex);
     }
     const quota = snapshot?.quota;
