@@ -1061,8 +1061,8 @@ body {
 }
 
 .heat-card {
-  grid-template-rows: auto auto auto;
-  align-content: end;
+  grid-template-rows: auto 1fr auto;
+  align-content: stretch;
 }
 
 .trend-panels {
@@ -1225,7 +1225,7 @@ body {
 
 .hit-heatmap {
   display: grid;
-  grid-template-columns: repeat(6, minmax(20px, 32px));
+  grid-template-columns: repeat(6, minmax(18px, 25px));
   justify-content: space-between;
   gap: 4px;
 }
