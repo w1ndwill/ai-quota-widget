@@ -1225,7 +1225,8 @@ body {
 
 .hit-heatmap {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(20px, 32px));
+  justify-content: space-between;
   gap: 4px;
 }
 
