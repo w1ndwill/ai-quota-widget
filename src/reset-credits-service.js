@@ -23,7 +23,7 @@ function readAccessToken() {
   return token;
 }
 
-function requestJson(url, token) {
+function requestJson(url, token, timeoutMs = 1500) {
   return new Promise((resolve, reject) => {
     const request = https.request(
       url,
@@ -58,7 +58,7 @@ function requestJson(url, token) {
       }
     );
 
-    request.setTimeout(10000, () => {
+    request.setTimeout(timeoutMs, () => {
       request.destroy(new Error("reset credits request timed out"));
     });
     request.on("error", reject);
@@ -68,15 +68,22 @@ function requestJson(url, token) {
 
 function normalizeResetCredits(payload) {
   const credits = Array.isArray(payload?.credits) ? payload.credits : payload?.credits ? [payload.credits] : [];
+  const normalizedCredits = credits.map((credit) => ({
+    status: credit.status ?? null,
+    title: credit.title ?? null,
+    grantedAt: normalizeDateTime(credit.granted_at),
+    expiresAt: normalizeDateTime(credit.expires_at)
+  })).sort(compareExpiry);
   return {
-    availableCount: readNumber(payload?.available_count, credits.filter((credit) => credit.status === "available").length),
-    credits: credits.map((credit) => ({
-      status: credit.status ?? null,
-      title: credit.title ?? null,
-      grantedAt: normalizeDateTime(credit.granted_at),
-      expiresAt: normalizeDateTime(credit.expires_at)
-    }))
+    availableCount: readNumber(payload?.available_count, normalizedCredits.filter((credit) => credit.status === "available").length),
+    credits: normalizedCredits
   };
+}
+
+function compareExpiry(a, b) {
+  const aTime = a.expiresAt ?? Number.POSITIVE_INFINITY;
+  const bTime = b.expiresAt ?? Number.POSITIVE_INFINITY;
+  return aTime - bTime;
 }
 
 function normalizeDateTime(value) {

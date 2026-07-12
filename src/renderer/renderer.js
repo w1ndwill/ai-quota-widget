@@ -25,8 +25,13 @@ const elements = {
   longBar: document.getElementById("longBar"),
   longReset: document.getElementById("longReset"),
   longResetCompact: document.getElementById("longResetCompact"),
+  resetRow: document.getElementById("resetRow"),
   resetCount: document.getElementById("resetCount"),
   resetExpiry: document.getElementById("resetExpiry"),
+  resetDialog: document.getElementById("resetDialog"),
+  resetDialogClose: document.getElementById("resetDialogClose"),
+  resetDialogSummary: document.getElementById("resetDialogSummary"),
+  resetDialogList: document.getElementById("resetDialogList"),
   tokenCardTitle: document.getElementById("tokenCardTitle"),
   totalTokens: document.getElementById("totalTokens"),
   inputTokens: document.getElementById("inputTokens"),
@@ -48,10 +53,13 @@ const elements = {
   hitHeatmap: document.getElementById("hitHeatmap"),
   heatTooltip: document.getElementById("heatTooltip"),
   heatDateStart: document.getElementById("heatDateStart"),
-  heatDateEnd: document.getElementById("heatDateEnd")
+  heatDateEnd: document.getElementById("heatDateEnd"),
+  tokenRangeToggle: document.getElementById("tokenRangeToggle"),
+  tokenCardBody: document.getElementById("tokenCardBody")
 };
 
 let isCompact = localStorage.getItem("compact") === "1";
+let tokenRange = localStorage.getItem("tokenRange") || "24h";
 let isRefreshing = false;
 let focusedCard = null;
 let lastSnapshot = null;
@@ -60,10 +68,19 @@ const chartSeries = new Map();
 const HISTORY_VERSION = "2";
 let history = readHistory();
 let mergedModels = [];
+let latestResetCredits = [];
 
 elements.closeButton.addEventListener("click", () => window.aiQuota.quitWindow());
 elements.compactButton.addEventListener("click", () => setCompact(!isCompact));
 elements.refreshButton.addEventListener("click", refresh);
+elements.resetRow.addEventListener("click", openResetDialog);
+elements.resetRow.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  openResetDialog();
+});
+elements.resetDialogClose.addEventListener("click", closeResetDialog);
+elements.resetDialog.querySelector(".reset-dialog-backdrop").addEventListener("click", closeResetDialog);
 elements.pinButton.addEventListener("click", async () => {
   const pinned = await window.aiQuota.toggleAlwaysOnTop();
   elements.pinButton.classList.toggle("active", pinned);
@@ -90,15 +107,18 @@ elements.shell.addEventListener("click", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeModelPicker();
   if (event.key === "Escape") clearCardFocus();
+  if (event.key === "Escape") closeResetDialog();
 });
 
 window.aiQuota.onUpdated(render);
 renderBar(elements.shortBar, 0, "gray");
 renderBar(elements.longBar, 0, "gray");
-renderHistory();
 setCompact(isCompact);
+setupTokenRangeToggle();
 generateAndSaveTrayIcon();
 refresh();
+// 历史图会同步扫描大量本地日志，延迟到额度首屏已经发起请求后再读取。
+setTimeout(renderHistory, 800);
 setInterval(refresh, 5 * 60_000);
 
 function setupSettings() {
@@ -147,69 +167,9 @@ function setupSettings() {
 }
 
 function applyTheme(theme) {
-  try {
   const root = document.documentElement;
-  const panel = document.querySelector(".panel");
-  const settingsCard = document.querySelector(".settings-card");
-  if (theme === "dark") {
-    root.style.setProperty("--ink", "#e0e5ea");
-    root.style.setProperty("--muted", "#8f99a3");
-    root.style.setProperty("--line", "rgba(255,255,255,0.10)");
-    root.style.setProperty("--panel", "rgba(22,28,34,0.94)");
-    root.style.setProperty("--card", "rgba(32,40,48,0.82)");
-    root.style.colorScheme = "dark";
-    if (panel) panel.style.background = "radial-gradient(circle at 12% 8%, rgba(50,58,68,0.7), transparent 34%), linear-gradient(145deg, rgba(28,36,44,0.94), rgba(20,26,32,0.92))";
-    if (settingsCard) { settingsCard.style.background = "rgba(36,44,52,0.98)"; settingsCard.style.color = "#d0d6dd"; }
-    // Update static element colors for dark mode
-    document.querySelectorAll(".metric, .token-card, .trend-card, .heat-card").forEach((el) => {
-      el.style.background = "rgba(36,44,52,0.74)";
-      el.style.borderColor = "rgba(255,255,255,0.08)";
-    });
-    document.querySelectorAll(".metric-title, .card-head span, .trend-head strong").forEach((el) => {
-      el.style.color = "#c8d0d8";
-    });
-    document.querySelectorAll(".metric-side strong, .token-card strong").forEach((el) => {
-      el.style.color = "#e8edf2";
-    });
-    document.querySelectorAll(".bar").forEach((el) => {
-      el.style.background = "rgba(255,255,255,0.08)";
-    });
-    document.querySelector(".brand strong").style.color = "#e0e5ea";
-    document.querySelector(".settings-body span, .setting-section-head span, .setting-row span").style.color = "#bcc4cc";
-    document.querySelectorAll(".setting-row input, .setting-row select").forEach((el) => {
-      el.style.background = "rgba(50,58,68,0.8)";
-      el.style.color = "#d0d6dd";
-      el.style.borderColor = "rgba(255,255,255,0.12)";
-    });
-  } else {
-    root.style.setProperty("--ink", "#1d232b");
-    root.style.setProperty("--muted", "#747d89");
-    root.style.setProperty("--line", "rgba(255,255,255,0.72)");
-    root.style.setProperty("--panel", "rgba(237,244,239,0.84)");
-    root.style.setProperty("--card", "rgba(255,255,255,0.68)");
-    root.style.colorScheme = "light";
-    if (panel) panel.style.background = "";
-    if (settingsCard) { settingsCard.style.background = ""; settingsCard.style.color = ""; }
-    // Reset inline styles
-    document.querySelectorAll(".metric, .token-card, .trend-card, .heat-card").forEach((el) => {
-      el.style.background = ""; el.style.borderColor = "";
-    });
-    document.querySelectorAll(".metric-title, .card-head span, .trend-head strong").forEach((el) => {
-      el.style.color = "";
-    });
-    document.querySelectorAll(".metric-side strong, .token-card strong").forEach((el) => {
-      el.style.color = "";
-    });
-    document.querySelectorAll(".bar").forEach((el) => {
-      el.style.background = "";
-    });
-    const brandStrong = document.querySelector(".brand strong");
-    if (brandStrong) brandStrong.style.color = "";
-    document.querySelectorAll(".setting-row input, .setting-row select").forEach((el) => {
-      el.style.background = ""; el.style.color = ""; el.style.borderColor = "";
-    });
-  }
-  } catch(e) { /* don't crash on theme */ }
+  root.dataset.theme = theme === "dark" ? "dark" : "light";
+  root.style.colorScheme = root.dataset.theme;
 }
 
 const I18N = {
@@ -268,6 +228,15 @@ const I18N = {
     noLocalData: "暂无本地会话数据",
     shellTitle: "点击空白处刷新",
     resetCount: (n) => `${n} 张`,
+    resetCard: "重置卡",
+    noResetCredits: "暂无重置卡",
+    grantedAt: "获得时间",
+    expiresAt: "到期时间",
+    unknownTime: "未知",
+    available: "可用",
+    used: "已使用",
+    expired: "已过期",
+    unknownStatus: "未知状态",
     tokenCostSession: (n) => `近 24h · ${n} 会话`,
   },
   en: {
@@ -325,6 +294,15 @@ const I18N = {
     noLocalData: "No local session data",
     shellTitle: "Click to refresh",
     resetCount: (n) => `${n} cards`,
+    resetCard: "Reset card",
+    noResetCredits: "No reset cards",
+    grantedAt: "Granted",
+    expiresAt: "Expires",
+    unknownTime: "Unknown",
+    available: "Available",
+    used: "Used",
+    expired: "Expired",
+    unknownStatus: "Unknown status",
     tokenCostSession: (n) => `24h · ${n} sessions`,
   }
 };
@@ -354,6 +332,7 @@ function applyLang(lang) {
     if (optDark) optDark.textContent = t("themeDark");
     const st = document.querySelector(".settings-head strong");
     if (st) st.textContent = t("settingsTitle");
+    set("resetDialogTitle", "resetCards");
     attr("refreshButton", "refreshTip");
     attr("pinButton", "pinTip");
     attr("compactButton", "compactTip");
@@ -398,6 +377,7 @@ function render(snapshot) {
     const quota = snapshot?.quota;
     elements.updatedAt.textContent = snapshot?.error ? t("refreshFailed") : formatTime(snapshot?.updatedAt ?? Date.now());
     elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));
+    elements.updatedAt.title = snapshot?.error ?? "";
 
     renderWindow("short", quota?.shortWindow, "5小时");
     renderWindow("long", quota?.longWindow, "周限额");
@@ -415,6 +395,66 @@ function render(snapshot) {
     elements.updatedAt.classList.add("error");
   }
 }
+
+function setupTokenRangeToggle() {
+  const toggle = elements.tokenRangeToggle;
+  if (!toggle) return;
+  const buttons = toggle.querySelectorAll(".range-btn");
+  
+  buttons.forEach((btn) => {
+    const range = btn.dataset.range;
+    if (range === tokenRange) {
+      btn.classList.add("active");
+      btn.setAttribute("aria-pressed", "true");
+    } else {
+      btn.classList.remove("active");
+      btn.setAttribute("aria-pressed", "false");
+    }
+  });
+
+  setTimeout(updateToggleSlider, 100);
+  window.addEventListener("resize", updateToggleSlider);
+
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const range = btn.dataset.range;
+      if (range === tokenRange) return;
+
+      tokenRange = range;
+      localStorage.setItem("tokenRange", range);
+
+      buttons.forEach((b) => {
+        const active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-pressed", String(active));
+      });
+      
+      updateToggleSlider();
+
+      elements.tokenCardBody.classList.add("switching");
+      await new Promise((resolve) => setTimeout(resolve, 220));
+
+      if (lastSnapshot) {
+        const tokenData = getTokenForModel(lastSnapshot, selectedModel);
+        await renderTokenStats(tokenData, mergedModels);
+      }
+
+      elements.tokenCardBody.classList.remove("switching");
+    });
+  });
+}
+
+function updateToggleSlider() {
+  const toggle = elements.tokenRangeToggle;
+  if (!toggle) return;
+  const activeBtn = toggle.querySelector(".range-btn.active");
+  const slider = toggle.querySelector(".range-slider");
+  if (slider && activeBtn) {
+    slider.style.width = `${activeBtn.offsetWidth}px`;
+    slider.style.transform = `translateX(${activeBtn.offsetLeft}px)`;
+  }
+}
+
 
 function setupModelSelect() {
   const picker = document.createElement("div");
@@ -500,9 +540,10 @@ function modelLabel(item) {
 
 function sourceLabel(stats) {
   if (!stats) return "\u65e0\u6570\u636e";
-  if (stats.source === "antigravity") return "Antigravity \u00b7 \u4f30\u7b97";
-  if (stats.source === "merged") return "Codex + Antigravity";
-  return stats.source === "localSessions" ? "\u672c\u5730\u4f1a\u8bdd" : "\u63a5\u53e3\u6570\u636e";
+  const suffix = tokenRange === "cumulative" ? " · 累计" : "";
+  if (stats.source === "antigravity") return "Antigravity \u00b7 \u4f30\u7b97" + suffix;
+  if (stats.source === "merged") return "Codex + Antigravity" + suffix;
+  return (stats.source === "localSessions" || stats.source === "localModel" ? "\u672c\u5730\u4f1a\u8bdd" : "\u63a5\u53e3\u6570\u636e") + suffix;
 }
 
 function openModelPicker() {
@@ -643,25 +684,108 @@ function renderRing(quota) {
 }
 
 function renderResetCredits(resetCredits, resetCard) {
-  const availableCount = resetCredits?.availableCount ?? resetCard?.count;
-  const first = resetCredits?.credits?.[0];
-  const expiresAt = first?.expiresAt ?? resetCard?.expiresAt;
+  if (Array.isArray(resetCredits?.credits)) {
+    latestResetCredits = [...resetCredits.credits].sort(compareResetExpiry);
+  }
+  const availableCredits = latestResetCredits.filter((credit) => credit.status === "available");
+  const availableCount = resetCredits?.availableCount ?? resetCard?.count ?? availableCredits.length;
+  const nearest = (availableCredits.length ? availableCredits : latestResetCredits)[0];
+  const expiresAt = nearest?.expiresAt ?? resetCard?.expiresAt;
   elements.resetCount.textContent = availableCount == null ? "--" : t("resetCount", availableCount);
   elements.resetExpiry.textContent = expiresAt ? formatDateTime(expiresAt) : t("expireUnknown");
 }
 
-function renderTokenStats(stats, modelUsage) {
-  elements.tokenCardTitle.textContent = t("token24h");
-  syncModelSelect(modelUsage);
-  const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => (item.sourceModel || item.model) === selectedModel);
-  if (selectedUsage) {
-    stats = {
-      ...stats,
-      ...selectedUsage,
-      source: "localModel",
-      cacheHitRate: (selectedUsage.cached == null || selectedUsage.input === 0) ? null : Math.round((selectedUsage.cached / selectedUsage.input) * 100)
-    };
+function openResetDialog() {
+  clearCardFocus();
+  renderResetDialog();
+  elements.resetDialog.classList.add("open");
+  elements.resetDialog.setAttribute("aria-hidden", "false");
+  elements.resetRow.setAttribute("aria-expanded", "true");
+  elements.resetDialogClose.focus();
+}
+
+function closeResetDialog() {
+  elements.resetDialog.classList.remove("open");
+  elements.resetDialog.setAttribute("aria-hidden", "true");
+  elements.resetRow.setAttribute("aria-expanded", "false");
+}
+
+function renderResetDialog() {
+  const cards = [...latestResetCredits].sort(compareResetExpiry);
+  const availableCount = cards.filter((card) => card.status === "available").length;
+  elements.resetDialogList.replaceChildren();
+  elements.resetDialogSummary.textContent = cards.length ? `${t("available")} ${availableCount} · ${t("resetCount", cards.length)}` : t("noResetCredits");
+  if (!cards.length) {
+    const empty = document.createElement("p");
+    empty.className = "reset-dialog-empty";
+    empty.textContent = t("noResetCredits");
+    elements.resetDialogList.append(empty);
+    return;
   }
+  for (const card of cards) {
+    const item = document.createElement("article");
+    item.className = "reset-credit-item";
+    const head = document.createElement("div");
+    const title = document.createElement("strong");
+    const status = document.createElement("span");
+    title.textContent = card.title || t("resetCard");
+    status.textContent = resetStatusLabel(card.status);
+    status.className = `reset-credit-status ${card.status === "available" ? "available" : "inactive"}`;
+    head.append(title, status);
+    const detail = document.createElement("p");
+    detail.textContent = `${t("grantedAt")}：${card.grantedAt ? formatDateTime(card.grantedAt) : t("unknownTime")}\n${t("expiresAt")}：${card.expiresAt ? formatDateTime(card.expiresAt) : t("expireUnknown")}`;
+    item.append(head, detail);
+    elements.resetDialogList.append(item);
+  }
+}
+
+function compareResetExpiry(a, b) {
+  return (a.expiresAt ?? Number.POSITIVE_INFINITY) - (b.expiresAt ?? Number.POSITIVE_INFINITY);
+}
+
+function resetStatusLabel(status) {
+  if (status === "available") return t("available");
+  if (status === "used") return t("used");
+  if (status === "expired") return t("expired");
+  return status || t("unknownStatus");
+}
+
+async function renderTokenStats(stats, modelUsage) {
+  syncModelSelect(modelUsage);
+
+  let displayStats = stats;
+  let titleText = t("token24h");
+
+  if (tokenRange === "cumulative") {
+    titleText = "累计 Token";
+    const modelArg = selectedModel === "all" ? "all" : selectedModel.split(":").slice(1).join(":");
+    try {
+      const cumStats = await window.aiQuota.readCumulativeTokens(modelArg);
+      if (cumStats) {
+        displayStats = {
+          ...cumStats,
+          source: selectedModel === "all" ? "merged" : (selectedModel.startsWith("A:") ? "antigravity" : "codex"),
+          cacheHitRate: (cumStats.cached == null || cumStats.input === 0) ? null : Math.round((cumStats.cached / cumStats.input) * 100)
+        };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  } else {
+    const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => (item.sourceModel || item.model) === selectedModel);
+    if (selectedUsage) {
+      displayStats = {
+        ...stats,
+        ...selectedUsage,
+        source: "localModel",
+        cacheHitRate: (selectedUsage.cached == null || selectedUsage.input === 0) ? null : Math.round((selectedUsage.cached / selectedUsage.input) * 100)
+      };
+    }
+  }
+
+  elements.tokenCardTitle.textContent = titleText;
+  stats = displayStats;
+
   const hasTokenData =
     typeof stats?.input === "number" ||
     typeof stats?.cached === "number" ||

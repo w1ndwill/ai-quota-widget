@@ -8,12 +8,9 @@ contextBridge.exposeInMainWorld("aiQuota", {
   toggleAlwaysOnTop: () => ipcRenderer.invoke("window:toggleAlwaysOnTop"),
   quitWindow: () => ipcRenderer.invoke("window:quit"),
   setCompact: (compact) => ipcRenderer.invoke("window:setCompact", compact),
-  readDailyTokenHistory: (model) => ipcRenderer.invoke("tokens:dailyHistory", model),
-  readHourlyTokenHistory: (model) => ipcRenderer.invoke("tokens:hourlyHistory", model),
   readTokenHistory: (model) => ipcRenderer.invoke("tokens:history", model),
-  readAntigravityDailyHistory: (model) => ipcRenderer.invoke("antigravity:dailyHistory", model),
-  readAntigravityHourlyHistory: (model) => ipcRenderer.invoke("antigravity:hourlyHistory", model),
   readAntigravityHistory: (model) => ipcRenderer.invoke("antigravity:history", model),
+  readCumulativeTokens: (model) => ipcRenderer.invoke("tokens:cumulative", model),
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),
   onUpdated: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);

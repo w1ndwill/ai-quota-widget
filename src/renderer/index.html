@@ -102,7 +102,7 @@
               </article>
             </section>
 
-            <article id="resetRow" class="metric reset-row interactive-card" data-expand-title="重置卡" tabindex="0" aria-label="重置卡，点击放大">
+            <article id="resetRow" class="metric reset-row interactive-card" data-expand-title="重置卡" tabindex="0" role="button" aria-expanded="false" aria-label="重置卡，点击查看全部卡片">
               <div class="metric-main">
                 <div class="metric-title">重置卡</div>
                 <p class="reset-sub" id="resetSub">可恢复 5 小时与周额度</p>
@@ -118,19 +118,26 @@
             <article class="token-card total-token interactive-card" data-expand-title="近 24 小时 Token" tabindex="0" aria-label="近 24 小时 Token，点击放大">
               <div class="card-head">
                 <span id="tokenCardTitle">近 24h Token</span>
+                <div class="token-range-toggle" id="tokenRangeToggle">
+                  <button class="range-btn active" data-range="24h" aria-pressed="true">24h</button>
+                  <button class="range-btn" data-range="cumulative" aria-pressed="false">累计</button>
+                  <span class="range-slider"></span>
+                </div>
+              </div>
+              <div class="token-card-body" id="tokenCardBody">
                 <b id="tokenCost">本地会话</b>
+                <strong id="totalTokens">--</strong>
+                <div class="token-bar detail-target" data-detail-key="tokenBar" tabindex="0">
+                  <span id="inputSegment"></span>
+                  <span id="cacheSegment"></span>
+                  <span id="outputSegment"></span>
+                </div>
+                <dl class="token-breakdown">
+                  <div><dt id="inputLabel">输入</dt><dd id="inputTokens">--</dd></div>
+                  <div><dt id="cachedLabel">缓存</dt><dd id="cachedTokens">--</dd></div>
+                  <div><dt id="outputLabel">输出</dt><dd id="outputTokens">--</dd></div>
+                </dl>
               </div>
-              <strong id="totalTokens">--</strong>
-              <div class="token-bar detail-target" data-detail-key="tokenBar" tabindex="0">
-                <span id="inputSegment"></span>
-                <span id="cacheSegment"></span>
-                <span id="outputSegment"></span>
-              </div>
-              <dl class="token-breakdown">
-                <div><dt id="inputLabel">输入</dt><dd id="inputTokens">--</dd></div>
-                <div><dt id="cachedLabel">缓存</dt><dd id="cachedTokens">--</dd></div>
-                <div><dt id="outputLabel">输出</dt><dd id="outputTokens">--</dd></div>
-              </dl>
             </article>
 
             <article class="token-card interactive-card" data-expand-title="命中率分析" tabindex="0" aria-label="命中率分析，点击放大">
@@ -216,6 +223,21 @@
         </section>
       </section>
     </main>
+    <section id="resetDialog" class="reset-dialog" aria-hidden="true">
+      <div class="reset-dialog-backdrop"></div>
+      <div class="reset-dialog-card" role="dialog" aria-modal="true" aria-labelledby="resetDialogTitle">
+        <header class="reset-dialog-head">
+          <div>
+            <strong id="resetDialogTitle">全部重置卡</strong>
+            <span id="resetDialogSummary">暂无重置卡</span>
+          </div>
+          <button id="resetDialogClose" class="icon-button" title="关闭" aria-label="关闭重置卡列表">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8l8 8M16 8l-8 8" /></svg>
+          </button>
+        </header>
+        <div id="resetDialogList" class="reset-dialog-list"></div>
+      </div>
+    </section>
     <section id="settingsPanel" class="settings-panel" aria-hidden="true">
       <div class="settings-backdrop"></div>
       <div class="settings-card" role="dialog" aria-label="设置">

@@ -14,6 +14,28 @@ const {
   readDailyTokenHistory,
   readHourlyTokenHistory
 } = require("../src/token-usage-service");
+const { CodexService } = require("../src/codex-service");
+
+test("keeps the server-reported remaining quota before a future reset", async () => {
+  const service = new CodexService();
+  const futureReset = Date.now() + 60 * 60_000;
+  service.ensureStarted = async () => {};
+  service.request = async (method) => {
+    if (method === "account/rateLimits/read") {
+      return {
+        rateLimits: {
+          primary: { usedPercent: 34, windowDurationMins: 300, resetsAt: futureReset },
+          secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt: futureReset }
+        }
+      };
+    }
+    return {};
+  };
+
+  const snapshot = await service.readQuota();
+  assert.equal(snapshot.shortWindow.remainingPercent, 66);
+  assert.equal(snapshot.longWindow.remainingPercent, 80);
+});
 
 test("normalizes Codex rate limit windows and quota card expiry", () => {
   const snapshot = normalizeCodexQuota({
@@ -143,24 +165,30 @@ test("normalizes reset card hints from rate-limit payload credits", () => {
   assert.equal(snapshot.resetCard.expiresAt, Date.parse("2026-08-01T00:00:00Z"));
 });
 
-test("normalizes wham reset credits response", () => {
+test("normalizes and sorts wham reset credits response by expiry", () => {
   const snapshot = normalizeResetCredits({
-    available_count: 1,
+    available_count: 2,
     credits: [
       {
         status: "available",
         title: "Full reset (Weekly + 5 hr)",
         granted_at: "2026-07-01T20:05:28Z",
         expires_at: "2026-07-31T20:05:28Z"
+      },
+      {
+        status: "available",
+        title: "Second reset",
+        granted_at: "2026-07-02T20:05:28Z",
+        expires_at: "2026-07-20T20:05:28Z"
       }
     ]
   });
 
-  assert.equal(snapshot.availableCount, 1);
+  assert.equal(snapshot.availableCount, 2);
+  assert.equal(snapshot.credits[0].title, "Second reset");
   assert.equal(snapshot.credits[0].status, "available");
-  assert.equal(snapshot.credits[0].title, "Full reset (Weekly + 5 hr)");
-  assert.equal(snapshot.credits[0].grantedAt, Date.parse("2026-07-01T20:05:28Z"));
-  assert.equal(snapshot.credits[0].expiresAt, Date.parse("2026-07-31T20:05:28Z"));
+  assert.equal(snapshot.credits[1].grantedAt, Date.parse("2026-07-01T20:05:28Z"));
+  assert.equal(snapshot.credits[1].expiresAt, Date.parse("2026-07-31T20:05:28Z"));
 });
 
 test("reads local Codex session token usage", (t) => {

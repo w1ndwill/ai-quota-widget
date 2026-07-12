@@ -5,8 +5,8 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { CodexService } = require("./codex-service");
 const { readResetCredits } = require("./reset-credits-service");
-const { readLocalTokenUsage, readDailyTokenHistory, readHourlyTokenHistory, readTokenHistory } = require("./token-usage-service");
-const { readLocalTokenUsage: readAntigravityUsage, readDailyTokenHistory: readAntigravityDailyHistory, readHourlyTokenHistory: readAntigravityHourlyHistory, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
+const { readLocalTokenUsage, readTokenHistory } = require("./token-usage-service");
+const { readLocalTokenUsage: readAntigravityUsage, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
 
 
 const gotTheLock = app.requestSingleInstanceLock();
@@ -104,6 +104,19 @@ let cachedAntigravityUsage = null;
 let lastLocalUsageTime = 0;
 let lastAntigravityUsageTime = 0;
 const CACHE_TTL = 15000; // 15 seconds cache
+let cachedResetCredits = null;
+let lastResetCreditsTime = 0;
+const RESET_CREDITS_CACHE_TTL = 5 * 60_000;
+
+async function readCachedResetCredits() {
+  if (cachedResetCredits && Date.now() - lastResetCreditsTime < RESET_CREDITS_CACHE_TTL) {
+    return cachedResetCredits;
+  }
+  const credits = await readResetCredits();
+  cachedResetCredits = credits;
+  lastResetCreditsTime = Date.now();
+  return credits;
+}
 
 async function readSnapshot() {
   const errors = [];
@@ -116,7 +129,7 @@ async function readSnapshot() {
 
   const [quotaResult, resetResult] = await Promise.allSettled([
     codex.readQuota(),
-    readResetCredits()
+    readCachedResetCredits()
   ]);
 
   if (quotaResult.status === "fulfilled") {
@@ -174,7 +187,8 @@ async function readSnapshot() {
     resetCredits,
     localTokenUsage,
     antigravityTokenUsage,
-    error: errors[0] ?? null,
+    // 重置卡和本地统计是辅助信息；它们失败时不能把一份成功的额度读数标成“刷新失败”。
+    error: quotaResult.status === "rejected" ? quotaResult.reason.message : null,
     errors,
     updatedAt: Date.now()
   };
@@ -218,20 +232,6 @@ app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle("window:setCompact", (_event, compact) => resizeWindow(Boolean(compact)));
-  ipcMain.handle("tokens:dailyHistory", (_event, model) => {
-    try {
-      return readDailyTokenHistory({ model, days: 45 });
-    } catch {
-      return {};
-    }
-  });
-  ipcMain.handle("tokens:hourlyHistory", (_event, model) => {
-    try {
-      return readHourlyTokenHistory({ model });
-    } catch {
-      return [];
-    }
-  });
   ipcMain.handle("tokens:history", (_event, model) => {
     try {
       return readTokenHistory({ model, days: 45 });
@@ -239,25 +239,30 @@ app.whenReady().then(() => {
       return { daily: {}, hourly: [] };
     }
   });
-  ipcMain.handle("antigravity:dailyHistory", (_event, model) => {
-    try {
-      return readAntigravityDailyHistory({ model, days: 45 });
-    } catch {
-      return {};
-    }
-  });
-  ipcMain.handle("antigravity:hourlyHistory", (_event, model) => {
-    try {
-      return readAntigravityHourlyHistory({ model });
-    } catch {
-      return [];
-    }
-  });
   ipcMain.handle("antigravity:history", (_event, model) => {
     try {
       return readAntigravityHistory({ model, days: 45 });
     } catch {
       return { daily: {}, hourly: [] };
+    }
+  });
+  ipcMain.handle("tokens:cumulative", (_event, model) => {
+    try {
+      const codex = readTokenHistory({ model, days: 9999 });
+      const ag = readAntigravityHistory({ model, days: 9999 });
+      const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+      for (const d of [codex.daily, ag.daily]) {
+        for (const v of Object.values(d)) {
+          sum.input += v.input || 0;
+          sum.cached += v.cached || 0;
+          sum.output += v.output || 0;
+          sum.reasoning += v.reasoning || 0;
+          sum.total += v.total || 0;
+        }
+      }
+      return sum;
+    } catch {
+      return null;
     }
   });
   ipcMain.on("tray:saveIcon", (_event, dataUrl) => {

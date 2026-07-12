@@ -47,46 +47,18 @@ class CodexService extends EventEmitter {
 
   async readQuota() {
     await this.ensureStarted();
-    const response = await this.request("account/rateLimits/read");
-    let usage = null;
-    let usageError = null;
-    try {
-      usage = await this.request("account/usage/read");
-    } catch (error) {
-      usageError = error.message;
-    }
+    // 额度是首屏必需数据；令可选的 token 统计并行读取，避免它拖慢刷新。
+    const [rateLimits, usageResult] = await Promise.all([
+      this.request("account/rateLimits/read"),
+      this.request("account/usage/read", undefined, 1500).then(
+        (value) => ({ value, error: null }),
+        (error) => ({ value: null, error: error.message })
+      )
+    ]);
+    const response = rateLimits;
+    const usage = usageResult.value;
+    const usageError = usageResult.error;
     const snapshot = normalizeCodexQuota({ ...response, accountUsage: usage, usageError });
-    
-    // Physics conflict correction:
-    if (snapshot?.shortWindow) {
-      const short = snapshot.shortWindow;
-      const now = Date.now();
-      if (short.usedPercent < 100 && short.resetsAt && now < short.resetsAt) {
-        short.usedPercent = 100;
-        short.remainingPercent = 0;
-        if (snapshot.quotaCard) {
-          snapshot.quotaCard.remainingPercent = 0;
-          snapshot.quotaCard.usedPercent = 100;
-        }
-      }
-    }
-
-    // Anti-pollution: keep correct rate limits if fake ones are pulled during lock period
-    if (this.lastSnapshot?.shortWindow && snapshot?.shortWindow) {
-      const oldShort = this.lastSnapshot.shortWindow;
-      const newShort = snapshot.shortWindow;
-      const now = Date.now();
-      if (oldShort.resetsAt && now < oldShort.resetsAt) {
-        if (newShort.usedPercent < oldShort.usedPercent) {
-          if (!newShort.resetsAt || newShort.resetsAt <= oldShort.resetsAt) {
-            snapshot.shortWindow = this.lastSnapshot.shortWindow;
-            snapshot.longWindow = this.lastSnapshot.longWindow;
-            snapshot.quotaCard = this.lastSnapshot.quotaCard;
-            snapshot.resetCard = this.lastSnapshot.resetCard;
-          }
-        }
-      }
-    }
 
     this.lastSnapshot = snapshot;
     this.saveCache(snapshot);
@@ -234,34 +206,6 @@ class CodexService extends EventEmitter {
         accountUsage: this.lastSnapshot?.accountUsage ?? null,
         usageError: this.lastSnapshot?.usageError ?? null
       });
-
-      // Physics conflict correction:
-      if (snapshot?.shortWindow) {
-        const short = snapshot.shortWindow;
-        const now = Date.now();
-        if (short.usedPercent < 100 && short.resetsAt && now < short.resetsAt) {
-          short.usedPercent = 100;
-          short.remainingPercent = 0;
-          if (snapshot.quotaCard) {
-            snapshot.quotaCard.remainingPercent = 0;
-            snapshot.quotaCard.usedPercent = 100;
-          }
-        }
-      }
-
-      // Anti-pollution: ignore temporary rate limit pushes during lock period (e.g. mock results from routed models)
-      if (this.lastSnapshot?.shortWindow && snapshot?.shortWindow) {
-        const oldShort = this.lastSnapshot.shortWindow;
-        const newShort = snapshot.shortWindow;
-        const now = Date.now();
-        if (oldShort.resetsAt && now < oldShort.resetsAt) {
-          if (newShort.usedPercent < oldShort.usedPercent) {
-            if (!newShort.resetsAt || newShort.resetsAt <= oldShort.resetsAt) {
-              return;
-            }
-          }
-        }
-      }
 
       this.lastSnapshot = snapshot;
       this.saveCache(snapshot);

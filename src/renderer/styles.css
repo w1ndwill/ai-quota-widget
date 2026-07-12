@@ -17,6 +17,142 @@
   font-variant-numeric: tabular-nums;
 }
 
+:root[data-theme="dark"] {
+  --ink: #e6ebf0;
+  --muted: #a9b3bd;
+  --line: rgba(255, 255, 255, 0.12);
+  --panel: rgba(25, 32, 40, 0.96);
+  --card: rgba(35, 44, 54, 0.88);
+}
+
+:root[data-theme="dark"] .panel {
+  background: radial-gradient(circle at 12% 8%, rgba(74, 87, 101, 0.34), transparent 34%), linear-gradient(145deg, rgba(31, 40, 50, 0.97), rgba(20, 27, 35, 0.97));
+}
+
+:root[data-theme="dark"] .brand strong,
+:root[data-theme="dark"] .metric-side strong,
+:root[data-theme="dark"] .token-card strong,
+:root[data-theme="dark"] .ring-core b,
+:root[data-theme="dark"] .settings-head strong,
+:root[data-theme="dark"] .reset-dialog-head strong,
+:root[data-theme="dark"] .reset-credit-item strong {
+  color: #f1f5f8;
+}
+
+:root[data-theme="dark"] .plan-pill,
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .model-picker-trigger {
+  color: #c5ced7;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="dark"] .icon-button:hover,
+:root[data-theme="dark"] .icon-button.active,
+:root[data-theme="dark"] .model-picker-trigger:hover,
+:root[data-theme="dark"] .model-picker.open .model-picker-trigger {
+  color: #f1f5f8;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="dark"] .quota-side {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(34, 43, 53, 0.9);
+}
+
+:root[data-theme="dark"] .quota-side.interactive-card:hover,
+:root[data-theme="dark"] .metric:hover,
+:root[data-theme="dark"] .interactive-card:not(.quota-side):hover,
+:root[data-theme="dark"] .interactive-card:not(.quota-side):focus-visible {
+  background: rgba(53, 65, 78, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="dark"] .ring {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="dark"] .ring-core {
+  background: rgba(28, 37, 46, 0.96);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .ring-core span,
+:root[data-theme="dark"] .ring-notes,
+:root[data-theme="dark"] .trend-footer,
+:root[data-theme="dark"] .trend-panel-head,
+:root[data-theme="dark"] .token-breakdown dd,
+:root[data-theme="dark"] .model-usage-list div,
+:root[data-theme="dark"] .card-head,
+:root[data-theme="dark"] .trend-head,
+:root[data-theme="dark"] .model-picker-option {
+  color: #d1d9e0;
+}
+
+:root[data-theme="dark"] .ring.ring-focus-short .ring-value-short,
+:root[data-theme="dark"] .ring.ring-focus-long .ring-value-long {
+  color: #fff;
+}
+
+:root[data-theme="dark"] .bar,
+:root[data-theme="dark"] .token-bar {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="dark"] .model-picker-arrow {
+  border-color: #bdc8d2;
+}
+
+:root[data-theme="dark"] .model-picker-menu,
+:root[data-theme="dark"] .settings-card,
+:root[data-theme="dark"] .reset-dialog-card {
+  color: var(--ink);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(36, 46, 57, 0.98);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-theme="dark"] .model-picker-option:hover,
+:root[data-theme="dark"] .model-picker-option.selected {
+  color: #d7f6df;
+  background: rgba(88, 200, 104, 0.2);
+}
+
+:root[data-theme="dark"] .model-usage-list div,
+:root[data-theme="dark"] .reset-credit-item {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+:root[data-theme="dark"] .model-usage-list b {
+  color: #c2b9ff;
+}
+
+:root[data-theme="dark"] .setting-row span {
+  color: #c8d1da;
+}
+
+:root[data-theme="dark"] .setting-row input,
+:root[data-theme="dark"] .setting-row select {
+  color: #e2e8ee;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="dark"] .reset-dialog-head span,
+:root[data-theme="dark"] .reset-credit-item p,
+:root[data-theme="dark"] .reset-dialog-empty {
+  color: #aeb9c3;
+}
+
+:root[data-theme="dark"] .chart-axes text,
+:root[data-theme="dark"] .chart-axes .axis-line,
+:root[data-theme="dark"] .chart-axes path {
+  fill: #aeb9c3;
+  stroke: rgba(218, 229, 238, 0.24);
+}
+
 * {
   box-sizing: border-box;
   user-select: none;
@@ -622,6 +758,7 @@ body {
 
 .quota-side .reset-row {
   border-color: rgba(103, 87, 231, 0.14);
+  cursor: pointer;
 }
 
 .quota-side .reset-row .reset-sub {
@@ -728,17 +865,93 @@ body {
   white-space: nowrap;
 }
 
-/* The total card has two independent labels; stack them so neither competes for width. */
+/* The total card has title + toggle pill side by side */
 .total-token .card-head {
-  display: grid;
-  justify-content: start;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .total-token .card-head span,
 .total-token .card-head b {
   overflow: visible;
   text-overflow: clip;
+}
+
+/* ── Token Range Toggle Pill ── */
+.token-range-toggle {
+  position: relative;
+  display: flex;
+  height: 24px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(55, 66, 76, 0.10);
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.range-btn {
+  all: unset;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.25s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.range-btn.active {
+  color: #fff;
+}
+
+.range-btn:not(.active):hover {
+  color: #303945;
+}
+
+.range-slider {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  height: calc(100% - 4px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #58c868 0%, #36b86a 100%);
+  box-shadow: 0 1px 4px rgba(54, 184, 106, 0.35);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+/* ── Token Card Body Transition ── */
+.token-card-body {
+  display: grid;
+  gap: 11px;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.token-card-body.switching {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+:root[data-theme="dark"] .token-range-toggle {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+:root[data-theme="dark"] .range-btn:not(.active):hover {
+  color: #d1d9e0;
+}
+
+:root[data-theme="dark"] .range-slider {
+  background: linear-gradient(135deg, #36b86a 0%, #2a9c57 100%);
 }
 
 .trend-head {
@@ -1337,6 +1550,109 @@ body.compact.refreshing .metric-side strong {
 }
 
 /* Settings panel */
+.reset-dialog {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+}
+
+.reset-dialog.open {
+  display: grid;
+  place-items: center;
+}
+
+.reset-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 42, 38, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.reset-dialog-card {
+  position: relative;
+  width: min(420px, calc(100vw - 36px));
+  max-height: min(560px, calc(100vh - 48px));
+  padding: 20px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 18px;
+  background: rgba(248, 252, 249, 0.98);
+  box-shadow: 0 24px 64px rgba(24, 42, 34, 0.28);
+  animation: reset-dialog-in 180ms var(--motion-spring);
+}
+
+@keyframes reset-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.reset-dialog-head,
+.reset-credit-item > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reset-dialog-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.reset-dialog-head strong {
+  color: #1d2b23;
+  font-size: 17px;
+}
+
+.reset-dialog-head span,
+.reset-credit-item p,
+.reset-dialog-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reset-dialog-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.reset-credit-item {
+  padding: 12px 14px;
+  border: 1px solid rgba(69, 88, 77, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.reset-credit-item strong {
+  color: #23382c;
+  font-size: 13px;
+}
+
+.reset-credit-item p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.reset-credit-status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reset-credit-status.available {
+  color: #1f7d42;
+  background: rgba(88, 200, 104, 0.15);
+}
+
+.reset-credit-status.inactive {
+  color: #6d7470;
+  background: rgba(107, 119, 112, 0.12);
+}
+
 .settings-panel {
   display: none;
   position: fixed;
