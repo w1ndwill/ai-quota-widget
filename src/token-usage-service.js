@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { scanFilesIncrementally } = require("./incremental-scan-engine");
 
 function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSessionsRoot() } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
@@ -92,22 +93,35 @@ function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSe
 }
 
 function readRecentUsageEvents({ since, root }) {
-  const files = listJsonlFiles(root)
-    .map((file) => ({ file, mtimeMs: safeStat(file)?.mtimeMs ?? 0 }))
-    .filter((item) => item.mtimeMs >= since);
+  const filePaths = listJsonlFiles(root);
+  const allParsedData = scanFilesIncrementally(filePaths, (file) => {
+    const allFileEvents = readUsageEvents(file);
+    let fallback = null;
+    if (!allFileEvents.length) {
+      fallback = readLatestUsage(file);
+    }
+    return { events: allFileEvents, fallback };
+  });
+
   const events = [];
   const fallbacks = [];
-  for (const { file, mtimeMs } of files) {
-    const allFileEvents = readUsageEvents(file);
-    if (allFileEvents.length) {
-      for (const event of allFileEvents) {
-        if (event.t >= since) events.push({ file, ...event });
+
+  for (const [file, data] of Object.entries(allParsedData)) {
+    if (data.events && data.events.length) {
+      for (const ev of data.events) {
+        if (ev.t >= since) {
+          events.push({ file, ...ev });
+        }
       }
-      continue;
+    } else if (data.fallback) {
+      const stat = safeStat(file);
+      const mtimeMs = stat?.mtimeMs ?? 0;
+      if (mtimeMs >= since) {
+        fallbacks.push({ file, t: mtimeMs, model: "unknown", ...data.fallback });
+      }
     }
-    const usage = readLatestUsage(file);
-    if (usage) fallbacks.push({ file, t: mtimeMs, model: "unknown", ...usage });
   }
+
   return { events, fallbacks };
 }
 

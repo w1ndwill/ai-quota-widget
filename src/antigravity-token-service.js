@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { scanFilesIncrementally } = require("./incremental-scan-engine");
 
 // Antigravity stores sessions under ~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl
 // These files contain conversation steps but NO token counts — we estimate from text content.
@@ -129,7 +130,8 @@ function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defa
 
 function readRecentEvents({ since, root }) {
   const roots = Array.isArray(root) ? root : [root];
-  const events = [];
+  const transcriptPaths = [];
+  
   for (const baseDir of roots) {
     if (!fs.existsSync(baseDir)) continue;
     let brainDirs = [];
@@ -142,68 +144,81 @@ function readRecentEvents({ since, root }) {
     }
     for (const brainDir of brainDirs) {
       const transcriptPath = path.join(brainDir, ".system_generated", "logs", "transcript.jsonl");
-      if (!fs.existsSync(transcriptPath)) continue;
-      const sessionId = path.basename(brainDir);
-
-      try {
-        const content = fs.readFileSync(transcriptPath, "utf8");
-        const lines = content.split(/\r?\n/);
-        let currentModel = "unknown";
-        let runningInputChars = 35000; // System instructions, rules, and skills base offset (approx. 12k tokens)
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const step = JSON.parse(line);
-            currentModel = extractModel(step) || currentModel;
-            const t = Date.parse(step.created_at);
-
-            if (step.type === "PLANNER_RESPONSE") {
-              let outputChars = 0;
-              let reasoningChars = 0;
-
-              if (step.thinking) {
-                reasoningChars += step.thinking.length;
-              }
-              if (step.tool_calls) {
-                outputChars += JSON.stringify(step.tool_calls).length;
-              }
-              if (step.content && typeof step.content === "string") {
-                outputChars += step.content.length;
-              }
-
-              if (Number.isFinite(t) && t >= since) {
-                const inputTokens = Math.round(runningInputChars / CHARS_PER_TOKEN);
-                const outputTokens = Math.round(outputChars / CHARS_PER_TOKEN);
-                const reasoningTokens = Math.round(reasoningChars / CHARS_PER_TOKEN);
-
-                events.push({
-                  t,
-                  model: currentModel,
-                  sessionId,
-                  input: inputTokens,
-                  output: outputTokens,
-                  reasoning: reasoningTokens,
-                  cached: null,
-                  total: inputTokens + outputTokens + reasoningTokens
-                });
-              }
-
-              runningInputChars += (outputChars + reasoningChars);
-            } else {
-              if (step.content && typeof step.content === "string") {
-                runningInputChars += step.content.length;
-              }
-            }
-          } catch {
-            // skip unparseable lines
-          }
-        }
-      } catch {
-        // skip unreadable files
+      if (fs.existsSync(transcriptPath)) {
+        transcriptPaths.push(transcriptPath);
       }
     }
   }
+
+  // 增量扫描
+  const allParsedData = scanFilesIncrementally(transcriptPaths, (filePath) => {
+    const fileEvents = [];
+    const sessionId = path.basename(path.dirname(path.dirname(path.dirname(filePath)))); // brainDir
+    const content = fs.readFileSync(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    let currentModel = "unknown";
+    let runningInputChars = 35000;
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const step = JSON.parse(line);
+        currentModel = extractModel(step) || currentModel;
+        const t = Date.parse(step.created_at);
+
+        if (step.type === "PLANNER_RESPONSE") {
+          let outputChars = 0;
+          let reasoningChars = 0;
+
+          if (step.thinking) {
+            reasoningChars += step.thinking.length;
+          }
+          if (step.tool_calls) {
+            outputChars += JSON.stringify(step.tool_calls).length;
+          }
+          if (step.content && typeof step.content === "string") {
+            outputChars += step.content.length;
+          }
+
+          if (Number.isFinite(t)) {
+            const inputTokens = Math.round(runningInputChars / CHARS_PER_TOKEN);
+            const outputTokens = Math.round(outputChars / CHARS_PER_TOKEN);
+            const reasoningTokens = Math.round(reasoningChars / CHARS_PER_TOKEN);
+
+            fileEvents.push({
+              t,
+              model: currentModel,
+              sessionId,
+              input: inputTokens,
+              output: outputTokens,
+              reasoning: reasoningTokens,
+              cached: null,
+              total: inputTokens + outputTokens + reasoningTokens
+            });
+          }
+
+          runningInputChars += (outputChars + reasoningChars);
+        } else {
+          if (step.content && typeof step.content === "string") {
+            runningInputChars += step.content.length;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return fileEvents;
+  });
+
+  const events = [];
+  for (const fileEvents of Object.values(allParsedData)) {
+    for (const ev of fileEvents) {
+      if (ev.t >= since) {
+        events.push(ev);
+      }
+    }
+  }
+
   return events;
 }
 
