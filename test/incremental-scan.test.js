@@ -6,72 +6,110 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const { scanFilesIncrementally, getCachePath } = require("../src/incremental-scan-engine");
+const { CACHE_VERSION, scanFilesIncrementally, getCachePath } = require("../src/incremental-scan-engine");
 
 test("incremental scanning system", async (t) => {
   const tmpDir = path.join(os.tmpdir(), `ai-quota-test-${Date.now()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
-  
   const cachePath = path.join(tmpDir, "history_accumulator_test.json");
   process.env.HISTORY_ACCUMULATOR_PATH = cachePath;
 
   t.after(() => {
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    } catch {}
+    fs.rmSync(tmpDir, { recursive: true, force: true });
     delete process.env.HISTORY_ACCUMULATOR_PATH;
   });
 
-  await t.test("should parse file on first scan and save cache", () => {
+  await t.test("parses a new file and reuses its unchanged result", () => {
     const testFile = path.join(tmpDir, "test1.jsonl");
     fs.writeFileSync(testFile, "line1\nline2", "utf8");
-
     let parseCount = 0;
-    const res = scanFilesIncrementally([testFile], (file) => {
+
+    const parse = () => {
       parseCount++;
       return { parsed: true, lines: 2 };
-    });
+    };
+    assert.deepStrictEqual(scanFilesIncrementally([testFile], parse)[testFile], { parsed: true, lines: 2 });
+    assert.deepStrictEqual(scanFilesIncrementally([testFile], parse)[testFile], { parsed: true, lines: 2 });
+    assert.strictEqual(parseCount, 1);
+  });
+
+  await t.test("invalidates old cache schemas after parser changes", () => {
+    const testFile = path.join(tmpDir, "schema.jsonl");
+    fs.writeFileSync(testFile, "line", "utf8");
+    fs.writeFileSync(cachePath, JSON.stringify({ version: CACHE_VERSION - 1, namespaces: {} }), "utf8");
+    let parseCount = 0;
+
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      scanFilesIncrementally([testFile], () => {
+        parseCount++;
+        return { current: true };
+      });
+    } finally {
+      console.warn = warn;
+    }
 
     assert.strictEqual(parseCount, 1);
-    assert.deepStrictEqual(res[testFile], { parsed: true, lines: 2 });
-    assert.ok(fs.existsSync(cachePath));
+    assert.strictEqual(JSON.parse(fs.readFileSync(cachePath, "utf8")).version, CACHE_VERSION);
   });
 
-  await t.test("should skip parsing on second scan if file metadata is identical (cache hit)", () => {
-    const testFile = path.join(tmpDir, "test1.jsonl");
-    
-    let parseCount = 0;
-    const res = scanFilesIncrementally([testFile], (file) => {
-      parseCount++;
-      return { parsed: true, lines: 2 };
-    });
+  await t.test("does not serve stale data when a changed file fails to parse", () => {
+    const testFile = path.join(tmpDir, "parse-error.jsonl");
+    fs.writeFileSync(testFile, "first", "utf8");
+    scanFilesIncrementally([testFile], () => ({ value: "old" }));
+    fs.writeFileSync(testFile, "changed", "utf8");
 
-    assert.strictEqual(parseCount, 0); // Cache hit! Skip parsing.
-    assert.deepStrictEqual(res[testFile], { parsed: true, lines: 2 });
+    const error = console.error;
+    console.error = () => {};
+    let result;
+    try {
+      result = scanFilesIncrementally([testFile], () => {
+        throw new Error("incomplete JSONL");
+      });
+    } finally {
+      console.error = error;
+    }
+
+    assert.deepStrictEqual(result, {});
   });
 
-  await t.test("should re-parse if file size has changed", () => {
-    const testFile = path.join(tmpDir, "test1.jsonl");
-    fs.writeFileSync(testFile, "line1\nline2\nline3", "utf8");
+  await t.test("keeps independent data-source namespaces isolated", () => {
+    const first = path.join(tmpDir, "first.jsonl");
+    const second = path.join(tmpDir, "second.jsonl");
+    fs.writeFileSync(first, "first", "utf8");
+    fs.writeFileSync(second, "second", "utf8");
+    scanFilesIncrementally([first], () => ({ source: "first" }), { namespace: "first" });
+    scanFilesIncrementally([second], () => ({ source: "second" }), { namespace: "second" });
+    fs.unlinkSync(first);
+    scanFilesIncrementally([], () => {}, { namespace: "first" });
 
-    let parseCount = 0;
-    const res = scanFilesIncrementally([testFile], (file) => {
-      parseCount++;
-      return { parsed: true, lines: 3 };
-    });
-
-    assert.strictEqual(parseCount, 1);
-    assert.deepStrictEqual(res[testFile], { parsed: true, lines: 3 });
+    const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    assert.deepStrictEqual(cache.namespaces.first.files, {});
+    assert.ok(cache.namespaces.second.files[second]);
   });
 
-  await t.test("should sweep deleted files from cache index", () => {
-    const testFile = path.join(tmpDir, "test1.jsonl");
+  await t.test("sweeps deleted files from the active namespace", () => {
+    const testFile = path.join(tmpDir, "deleted.jsonl");
+    fs.writeFileSync(testFile, "line", "utf8");
+    scanFilesIncrementally([testFile], () => ({ parsed: true }), { namespace: "deleted" });
     fs.unlinkSync(testFile);
+    assert.deepStrictEqual(scanFilesIncrementally([], () => {}, { namespace: "deleted" }), {});
 
-    const res = scanFilesIncrementally([], () => {});
-    assert.deepStrictEqual(res, {});
-
-    const cacheContent = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-    assert.deepStrictEqual(cacheContent.files, {});
+    const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    assert.deepStrictEqual(cache.namespaces.deleted.files, {});
   });
+});
+
+test("uses the application user-data directory when supplied", (t) => {
+  const previous = process.env.AI_QUOTA_USER_DATA_PATH;
+  const dir = path.join(os.tmpdir(), `ai-quota-user-data-${Date.now()}`);
+  delete process.env.HISTORY_ACCUMULATOR_PATH;
+  process.env.AI_QUOTA_USER_DATA_PATH = dir;
+  t.after(() => {
+    if (previous === undefined) delete process.env.AI_QUOTA_USER_DATA_PATH;
+    else process.env.AI_QUOTA_USER_DATA_PATH = previous;
+  });
+
+  assert.strictEqual(getCachePath(), path.join(dir, "history_accumulator.json"));
 });

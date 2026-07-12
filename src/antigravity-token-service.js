@@ -208,7 +208,7 @@ function readRecentEvents({ since, root }) {
       }
     }
     return fileEvents;
-  });
+  }, { namespace: "antigravity" });
 
   const events = [];
   for (const fileEvents of Object.values(allParsedData)) {

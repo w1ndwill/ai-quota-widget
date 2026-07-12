@@ -4,106 +4,132 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-// 缓存文件路径
+// Bump this whenever the parsed event format or parsing rules change.
+const CACHE_VERSION = 2;
+const SWEEP_INTERVAL_MS = 5 * 60_000;
+
 function getCachePath() {
   if (process.env.HISTORY_ACCUMULATOR_PATH) {
     return process.env.HISTORY_ACCUMULATOR_PATH;
   }
-  // 获取用户公共配置区
-  const home = os.homedir();
-  const dir = path.join(home, ".gemini", "antigravity");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+
+  const userDataPath = process.env.AI_QUOTA_USER_DATA_PATH;
+  if (userDataPath) {
+    return path.join(userDataPath, "history_accumulator.json");
   }
-  return path.join(dir, "history_accumulator.json");
+
+  // Fallback for direct Node usage outside the Electron main process.
+  return path.join(os.homedir(), ".gemini", "antigravity", "history_accumulator.json");
+}
+
+function emptyCache() {
+  return { version: CACHE_VERSION, namespaces: {} };
 }
 
 function loadCache() {
   const cachePath = getCachePath();
   try {
-    if (fs.existsSync(cachePath)) {
-      return JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    if (!fs.existsSync(cachePath)) return emptyCache();
+
+    const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    if (cache?.version === CACHE_VERSION && cache.namespaces && typeof cache.namespaces === "object") {
+      return cache;
     }
-  } catch (e) {
-    console.error("Failed to load history accumulator cache", e);
+    console.warn("Ignoring incompatible history accumulator cache");
+  } catch (error) {
+    console.error("Failed to load history accumulator cache", error);
   }
-  return { files: {} };
+  return emptyCache();
 }
 
 function saveCache(cache) {
   const cachePath = getCachePath();
+  const dir = path.dirname(cachePath);
+  const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    const dir = path.dirname(cachePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(temporaryPath, JSON.stringify(cache), "utf8");
+    fs.renameSync(temporaryPath, cachePath);
+  } catch (error) {
+    console.error("Failed to save history accumulator cache", error);
+    try {
+      fs.rmSync(temporaryPath, { force: true });
+    } catch {
+      // Ignore failed temporary-file cleanup.
     }
-    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2), "utf8");
-  } catch (e) {
-    console.error("Failed to save history accumulator cache", e);
   }
 }
 
-// 增量文件扫描方法
-function scanFilesIncrementally(filePaths, parseFile) {
+function getNamespace(cache, namespace) {
+  const existing = cache.namespaces[namespace];
+  if (existing?.files && typeof existing.files === "object") {
+    return existing;
+  }
+
+  const state = { files: {}, lastSweepAt: 0 };
+  cache.namespaces[namespace] = state;
+  return state;
+}
+
+function sweepDeletedFiles(state) {
+  for (const cachedFile of Object.keys(state.files)) {
+    if (!fs.existsSync(cachedFile)) {
+      delete state.files[cachedFile];
+    }
+  }
+  state.lastSweepAt = Date.now();
+  return true;
+}
+
+function scanFilesIncrementally(filePaths, parseFile, { namespace = "default" } = {}) {
   const cache = loadCache();
+  const state = getNamespace(cache, namespace);
   let dirty = false;
 
-  // 1. 比对当前存在的文件
   for (const filePath of filePaths) {
     let stat;
     try {
       stat = fs.statSync(filePath);
     } catch {
-      continue; // 文件打不开或不存在
-    }
-
-    const mtimeMs = stat.mtimeMs;
-    const size = stat.size;
-
-    const cachedItem = cache.files[filePath];
-    if (cachedItem && cachedItem.mtimeMs === mtimeMs && cachedItem.size === size) {
-      // 没变，直接跳过
       continue;
     }
 
-    // 变了，或者新文件
+    const { mtimeMs, size } = stat;
+    const cachedItem = state.files[filePath];
+    if (cachedItem && cachedItem.mtimeMs === mtimeMs && cachedItem.size === size) {
+      continue;
+    }
+
     try {
-      const parsedData = parseFile(filePath);
-      cache.files[filePath] = {
-        mtimeMs,
-        size,
-        data: parsedData
-      };
+      state.files[filePath] = { mtimeMs, size, data: parseFile(filePath) };
       dirty = true;
-    } catch (e) {
-      console.error(`Failed to parse file: ${filePath}`, e);
+    } catch (error) {
+      console.error(`Failed to parse file: ${filePath}`, error);
+      // A changed file must never silently fall back to an older parsed result.
+      if (cachedItem) {
+        delete state.files[filePath];
+        dirty = true;
+      }
     }
   }
 
-  // 2. 清理已经在磁盘上不复存在的文件记录
-  for (const cachedFile of Object.keys(cache.files)) {
-    if (!fs.existsSync(cachedFile)) {
-      delete cache.files[cachedFile];
-      dirty = true;
-    }
+  const now = Date.now();
+  if (!filePaths.length || now - (state.lastSweepAt || 0) >= SWEEP_INTERVAL_MS) {
+    dirty = sweepDeletedFiles(state) || dirty;
   }
 
-  if (dirty) {
-    saveCache(cache);
-  }
+  if (dirty) saveCache(cache);
 
-  // 3. 只返回本次传入 filePaths 的最新解析数据
   const result = {};
   for (const filePath of filePaths) {
-    const cachedItem = cache.files[filePath];
-    if (cachedItem) {
-      result[filePath] = cachedItem.data;
-    }
+    const cachedItem = state.files[filePath];
+    if (cachedItem) result[filePath] = cachedItem.data;
   }
   return result;
 }
 
 module.exports = {
+  CACHE_VERSION,
   scanFilesIncrementally,
   getCachePath
 };

@@ -101,7 +101,7 @@ function readRecentUsageEvents({ since, root }) {
       fallback = readLatestUsage(file);
     }
     return { events: allFileEvents, fallback };
-  });
+  }, { namespace: "codex-and-claude" });
 
   const events = [];
   const fallbacks = [];
