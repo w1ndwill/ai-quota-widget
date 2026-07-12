@@ -8,6 +8,15 @@ const { readResetCredits } = require("./reset-credits-service");
 const { readLocalTokenUsage, readTokenHistory } = require("./token-usage-service");
 const { readLocalTokenUsage: readAntigravityUsage, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
 
+// This lightweight dashboard has no WebGL/video workload. Software compositing avoids
+// keeping a large GPU helper process resident while it waits in the tray.
+app.disableHardwareAcceleration();
+
+// Extreme memory optimizations: disable unneeded features and constrain V8 garbage collection
+app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
+app.commandLine.appendSwitch("disable-speech-api");
+app.commandLine.appendSwitch("disable-webrtc");
+app.commandLine.appendSwitch("js-flags", "--expose-gc --max-semi-space-size=1 --max-old-space-size=32");
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -123,6 +132,58 @@ const CACHE_TTL = 15000; // 15 seconds cache
 let cachedResetCredits = null;
 let lastResetCreditsTime = 0;
 const RESET_CREDITS_CACHE_TTL = 5 * 60_000;
+const HISTORY_CACHE_TTL = 60_000;
+const CUMULATIVE_CACHE_TTL = 5 * 60_000;
+const historyCache = new Map();
+const cumulativeCache = new Map();
+
+function getCachedValue(cache, key, ttl, reader) {
+  const now = Date.now();
+  const cached = cache.get(key);
+  if (cached && now - cached.at < ttl) {
+    return cached.value;
+  }
+
+  const value = reader();
+  cache.set(key, { at: now, value });
+  return value;
+}
+
+function clearUsageCaches() {
+  cachedLocalUsage = null;
+  cachedAntigravityUsage = null;
+  lastLocalUsageTime = 0;
+  lastAntigravityUsageTime = 0;
+  historyCache.clear();
+  cumulativeCache.clear();
+}
+
+function readCachedHistory(source, model) {
+  const key = `${source}:${model}`;
+  const reader = source === "antigravity"
+    ? () => readAntigravityHistory({ model, days: 45 })
+    : () => readTokenHistory({ model, days: 45 });
+  return getCachedValue(historyCache, key, HISTORY_CACHE_TTL, reader);
+}
+
+function readCachedCumulativeTokens(model) {
+  return getCachedValue(cumulativeCache, model, CUMULATIVE_CACHE_TTL, () => {
+    const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+    const addHistory = (history) => {
+      for (const value of Object.values(history.daily)) {
+        sum.input += value.input || 0;
+        sum.cached += value.cached || 0;
+        sum.output += value.output || 0;
+        sum.reasoning += value.reasoning || 0;
+        sum.total += value.total || 0;
+      }
+    };
+
+    if (appConfig.enableClaudeCode) addHistory(readTokenHistory({ model, days: 9999 }));
+    if (appConfig.enableAntigravity) addHistory(readAntigravityHistory({ model, days: 9999 }));
+    return sum;
+  });
+}
 
 async function readCachedResetCredits() {
   if (cachedResetCredits && Date.now() - lastResetCreditsTime < RESET_CREDITS_CACHE_TTL) {
@@ -223,6 +284,11 @@ async function readSnapshot() {
 async function refreshAndPush() {
   const snapshot = await readSnapshot();
   mainWindow?.webContents.send("quota:updated", snapshot);
+  if (global.gc) {
+    setTimeout(() => {
+      try { global.gc(); } catch {}
+    }, 400);
+  }
   return snapshot;
 }
 
@@ -261,7 +327,7 @@ app.whenReady().then(() => {
   ipcMain.handle("tokens:history", (_event, model) => {
     try {
       if (!appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
-      return readTokenHistory({ model, days: 45 });
+      return readCachedHistory("codex", model);
     } catch {
       return { daily: {}, hourly: [] };
     }
@@ -269,35 +335,14 @@ app.whenReady().then(() => {
   ipcMain.handle("antigravity:history", (_event, model) => {
     try {
       if (!appConfig.enableAntigravity) return { daily: {}, hourly: [] };
-      return readAntigravityHistory({ model, days: 45 });
+      return readCachedHistory("antigravity", model);
     } catch {
       return { daily: {}, hourly: [] };
     }
   });
   ipcMain.handle("tokens:cumulative", (_event, model) => {
     try {
-      const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
-      if (appConfig.enableClaudeCode) {
-        const codex = readTokenHistory({ model, days: 9999 });
-        for (const v of Object.values(codex.daily)) {
-          sum.input += v.input || 0;
-          sum.cached += v.cached || 0;
-          sum.output += v.output || 0;
-          sum.reasoning += v.reasoning || 0;
-          sum.total += v.total || 0;
-        }
-      }
-      if (appConfig.enableAntigravity) {
-        const ag = readAntigravityHistory({ model, days: 9999 });
-        for (const v of Object.values(ag.daily)) {
-          sum.input += v.input || 0;
-          sum.cached += v.cached || 0;
-          sum.output += v.output || 0;
-          sum.reasoning += v.reasoning || 0;
-          sum.total += v.total || 0;
-        }
-      }
-      return sum;
+      return readCachedCumulativeTokens(model);
     } catch {
       return null;
     }
@@ -305,6 +350,7 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:read", () => appConfig);
   ipcMain.handle("settings:update", (_event, newConfig) => {
     appConfig = { ...appConfig, ...newConfig };
+    clearUsageCaches();
     try {
       fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf8");
     } catch {}

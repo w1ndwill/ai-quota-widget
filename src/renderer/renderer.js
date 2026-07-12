@@ -456,6 +456,12 @@ function render(snapshot) {
 
     recordHistory(quota);
     renderHistory();
+
+    // Data render finished, immediately clear image/layout cache and trigger V8 GC sweep
+    window.aiQuota.clearCache();
+    if (typeof gc === "function") {
+      try { gc(); } catch {}
+    }
   } catch (e) {
     elements.updatedAt.textContent = "ERR:" + (e.message || "").slice(0, 30);
     elements.updatedAt.classList.add("error");

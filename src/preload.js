@@ -1,6 +1,6 @@
 "use strict";
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("aiQuota", {
   read: () => ipcRenderer.invoke("quota:read"),
@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("aiQuota", {
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),
   readSettings: () => ipcRenderer.invoke("settings:read"),
   saveSettings: (config) => ipcRenderer.invoke("settings:update", config),
+  clearCache: () => {
+    try { webFrame.clearCache(); } catch {}
+  },
   onUpdated: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("quota:updated", listener);
