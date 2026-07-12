@@ -2,6 +2,8 @@
 
 一个常驻桌面的 Codex 额度与本地 Token 消耗悬浮窗。
 
+[English Version](README_EN.md)
+
 ## 使用发行版前请确认
 
 - 支持 Windows 10/11；发行版无需安装 Node.js。
