@@ -1,5 +1,11 @@
 "use strict";
 
+const os = require("node:os");
+const path = require("node:path");
+const fs = require("node:fs");
+const testCachePath = path.join(os.tmpdir(), `ai-quota-test-norm-${Date.now()}-${process.pid}.json`);
+process.env.HISTORY_ACCUMULATOR_PATH = testCachePath;
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
@@ -390,4 +396,12 @@ test("reads Claude Code projects session log with message.model, message.usage a
   assert.deepEqual(usage.modelUsage, [
     { model: "deepseek-v4-pro", input: 800, cached: 500, output: 50, reasoning: 0, total: 850 }
   ]);
+});
+
+test.after(() => {
+  try {
+    if (fs.existsSync(testCachePath)) {
+      fs.unlinkSync(testCachePath);
+    }
+  } catch {}
 });

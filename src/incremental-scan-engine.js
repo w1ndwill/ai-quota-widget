@@ -92,10 +92,13 @@ function scanFilesIncrementally(filePaths, parseFile) {
     saveCache(cache);
   }
 
-  // 3. 返回最新所有文件的解析数据（带上文件路径信息）
+  // 3. 只返回本次传入 filePaths 的最新解析数据
   const result = {};
-  for (const [filePath, item] of Object.entries(cache.files)) {
-    result[filePath] = item.data;
+  for (const filePath of filePaths) {
+    const cachedItem = cache.files[filePath];
+    if (cachedItem) {
+      result[filePath] = cachedItem.data;
+    }
   }
   return result;
 }
