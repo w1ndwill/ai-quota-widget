@@ -121,10 +121,25 @@ refresh();
 setTimeout(renderHistory, 800);
 setInterval(refresh, 5 * 60_000);
 
-function setupSettings() {
+async function setupSettings() {
   const panel = document.getElementById("settingsPanel");
   const langSelect = document.getElementById("langSelect");
   const themeSelect = document.getElementById("themeSelect");
+  const cfgCodex = document.getElementById("cfgCodex");
+  const cfgClaudeCode = document.getElementById("cfgClaudeCode");
+  const cfgAntigravity = document.getElementById("cfgAntigravity");
+
+  let config = { enableCodex: true, enableClaudeCode: true, enableAntigravity: true };
+  try {
+    const mainConfig = await window.aiQuota.readSettings();
+    if (mainConfig) {
+      config = { ...config, ...mainConfig };
+    }
+  } catch (e) {
+    console.error("Failed to read settings from main process", e);
+  }
+
+  document.body.classList.toggle("no-codex", !config.enableCodex);
 
   langSelect.value = localStorage.getItem("lang") || "zh";
   themeSelect.value = localStorage.getItem("theme") || "light";
@@ -135,6 +150,10 @@ function setupSettings() {
   document.getElementById("settingsButton").addEventListener("click", () => {
     langSelect.value = localStorage.getItem("lang") || "zh";
     themeSelect.value = localStorage.getItem("theme") || "light";
+    cfgCodex.checked = config.enableCodex;
+    cfgClaudeCode.checked = config.enableClaudeCode;
+    cfgAntigravity.checked = config.enableAntigravity;
+
     panel.classList.add("open");
     panel.setAttribute("aria-hidden", "false");
   });
@@ -148,7 +167,7 @@ function setupSettings() {
   panel.querySelector(".settings-backdrop").addEventListener("click", closeSettings);
 
   // Save
-  document.getElementById("settingsSave").addEventListener("click", () => {
+  document.getElementById("settingsSave").addEventListener("click", async () => {
     const lang = langSelect.value;
     const theme = themeSelect.value;
 
@@ -157,6 +176,22 @@ function setupSettings() {
 
     applyTheme(theme);
     applyLang(lang);
+
+    const newConfig = {
+      enableCodex: cfgCodex.checked,
+      enableClaudeCode: cfgClaudeCode.checked,
+      enableAntigravity: cfgAntigravity.checked
+    };
+
+    config = { ...config, ...newConfig };
+    document.body.classList.toggle("no-codex", !config.enableCodex);
+
+    try {
+      await window.aiQuota.saveSettings(newConfig);
+    } catch (e) {
+      console.error(e);
+    }
+
     closeSettings();
     refresh();
   });
@@ -198,6 +233,10 @@ const I18N = {
     settingsClose: "关闭设置",
     allModels: "全部模型",
     unknownModel: "未知模型",
+    sourceSectionTitle: "启用的数据源",
+    labelCodex: "OpenAI Codex 额度与日志",
+    labelClaudeCode: "Claude Code 本地日志",
+    labelAntigravity: "Antigravity 会话估算",
     noData: "无数据",
     uncomputable: "无法分析",
     waitingData: "等待数据",
@@ -264,6 +303,10 @@ const I18N = {
     settingsClose: "Close settings",
     allModels: "All Models",
     unknownModel: "Unknown",
+    sourceSectionTitle: "Data Sources",
+    labelCodex: "OpenAI Codex Quota & Logs",
+    labelClaudeCode: "Claude Code Local Logs",
+    labelAntigravity: "Antigravity Session Estimates",
     noData: "No data",
     uncomputable: "N/A",
     waitingData: "Waiting",
@@ -333,6 +376,10 @@ function applyLang(lang) {
     const st = document.querySelector(".settings-head strong");
     if (st) st.textContent = t("settingsTitle");
     set("resetDialogTitle", "resetCards");
+    set("sourceSectionTitle", "sourceSectionTitle");
+    set("labelCodex", "labelCodex");
+    set("labelClaudeCode", "labelClaudeCode");
+    set("labelAntigravity", "labelAntigravity");
     attr("refreshButton", "refreshTip");
     attr("pinButton", "pinTip");
     attr("compactButton", "compactTip");
@@ -374,6 +421,9 @@ async function setCompact(compact) {
 function render(snapshot) {
   try {
     lastSnapshot = snapshot;
+    if (snapshot?.config) {
+      document.body.classList.toggle("no-codex", !snapshot.config.enableCodex);
+    }
     const quota = snapshot?.quota;
     elements.updatedAt.textContent = snapshot?.error ? t("refreshFailed") : formatTime(snapshot?.updatedAt ?? Date.now());
     elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));

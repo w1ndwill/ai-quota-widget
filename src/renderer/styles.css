@@ -1921,3 +1921,67 @@ body.compact.refreshing .metric-side strong {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ── Data Source Setting Styles ── */
+.setting-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(69, 88, 77, 0.12);
+}
+
+.setting-section-title {
+  color: #344a3e;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.setting-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.setting-checkbox-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #36b86a;
+}
+
+.setting-checkbox-row span {
+  color: #3f5549;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ── Dark theme settings panel overrides ── */
+:root[data-theme="dark"] .setting-section {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="dark"] .setting-section-title {
+  color: #a7b7ad;
+}
+:root[data-theme="dark"] .setting-checkbox-row span {
+  color: #c5d3cb;
+}
+:root[data-theme="dark"] .setting-checkbox-row input[type="checkbox"] {
+  accent-color: #2a9c57;
+}
+
+/* ── Adaptive Layout when Codex is disabled ── */
+body.no-codex .quota-side {
+  display: none;
+}
+
+body.no-codex .dashboard {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "tokens"
+    "analysis";
+}
+

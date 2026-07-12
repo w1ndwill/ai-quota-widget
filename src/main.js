@@ -32,6 +32,21 @@ app.setPath("userData", userDataPath);
 const NORMAL_SIZE = { width: 760, height: 540 };
 const COMPACT_SIZE = { width: 360, height: 76 };
 
+let appConfig = {
+  enableCodex: true,
+  enableClaudeCode: true,
+  enableAntigravity: true
+};
+
+const configPath = path.join(userDataPath, "config.json");
+try {
+  if (fs.existsSync(configPath)) {
+    appConfig = { ...appConfig, ...JSON.parse(fs.readFileSync(configPath, "utf8")) };
+  }
+} catch (e) {
+  console.error("Failed to load app config", e);
+}
+
 const codex = new CodexService();
 let mainWindow = null;
 let tray = null;
@@ -120,66 +135,75 @@ async function readCachedResetCredits() {
 
 async function readSnapshot() {
   const errors = [];
-  let quota = codex.getCachedQuota();
+  let quota = null;
   let resetCredits = null;
   let localTokenUsage = null;
   let antigravityTokenUsage = null;
+  let quotaError = null;
 
   const now = Date.now();
 
-  const [quotaResult, resetResult] = await Promise.allSettled([
-    codex.readQuota(),
-    readCachedResetCredits()
-  ]);
+  if (appConfig.enableCodex) {
+    quota = codex.getCachedQuota();
+    const [quotaResult, resetResult] = await Promise.allSettled([
+      codex.readQuota(),
+      readCachedResetCredits()
+    ]);
 
-  if (quotaResult.status === "fulfilled") {
-    quota = quotaResult.value;
-  } else {
-    errors.push(quotaResult.reason.message);
-  }
+    if (quotaResult.status === "fulfilled") {
+      quota = quotaResult.value;
+    } else {
+      errors.push(quotaResult.reason.message);
+      quotaError = quotaResult.reason.message;
+    }
 
-  if (resetResult.status === "fulfilled") {
-    resetCredits = resetResult.value;
-  } else {
-    errors.push(resetResult.reason.message);
+    if (resetResult.status === "fulfilled") {
+      resetCredits = resetResult.value;
+    } else {
+      errors.push(resetResult.reason.message);
+    }
   }
 
   // Handle Antigravity Usage with 15s cache
-  try {
-    if (cachedAntigravityUsage && (now - lastAntigravityUsageTime < CACHE_TTL)) {
-      antigravityTokenUsage = cachedAntigravityUsage;
-    } else {
-      antigravityTokenUsage = readAntigravityUsage();
-      cachedAntigravityUsage = antigravityTokenUsage;
-      lastAntigravityUsageTime = now;
+  if (appConfig.enableAntigravity) {
+    try {
+      if (cachedAntigravityUsage && (now - lastAntigravityUsageTime < CACHE_TTL)) {
+        antigravityTokenUsage = cachedAntigravityUsage;
+      } else {
+        antigravityTokenUsage = readAntigravityUsage();
+        cachedAntigravityUsage = antigravityTokenUsage;
+        lastAntigravityUsageTime = now;
+      }
+    } catch (error) {
+      errors.push(error.message);
     }
-  } catch (error) {
-    errors.push(error.message);
   }
 
   // Handle Local Token Usage with 15s cache
-  try {
-    if (cachedLocalUsage && (now - lastLocalUsageTime < CACHE_TTL)) {
-      localTokenUsage = cachedLocalUsage;
-    } else {
-      localTokenUsage = readLocalTokenUsage();
-      cachedLocalUsage = localTokenUsage;
-      lastLocalUsageTime = now;
-    }
+  if (appConfig.enableClaudeCode) {
+    try {
+      if (cachedLocalUsage && (now - lastLocalUsageTime < CACHE_TTL)) {
+        localTokenUsage = cachedLocalUsage;
+      } else {
+        localTokenUsage = readLocalTokenUsage();
+        cachedLocalUsage = localTokenUsage;
+        lastLocalUsageTime = now;
+      }
 
-    if (quota?.tokenStats && quota.tokenStats.total == null && localTokenUsage?.total != null) {
-      quota = {
-        ...quota,
-        tokenStats: {
-          ...quota.tokenStats,
-          ...localTokenUsage,
-          accountUsageError: quota.tokenStats.error ?? null,
-          error: null
-        }
-      };
+      if (quota?.tokenStats && quota.tokenStats.total == null && localTokenUsage?.total != null) {
+        quota = {
+          ...quota,
+          tokenStats: {
+            ...quota.tokenStats,
+            ...localTokenUsage,
+            accountUsageError: quota.tokenStats.error ?? null,
+            error: null
+          }
+        };
+      }
+    } catch (error) {
+      errors.push(error.message);
     }
-  } catch (error) {
-    errors.push(error.message);
   }
 
   return {
@@ -187,8 +211,9 @@ async function readSnapshot() {
     resetCredits,
     localTokenUsage,
     antigravityTokenUsage,
+    config: appConfig,
     // 重置卡和本地统计是辅助信息；它们失败时不能把一份成功的额度读数标成“刷新失败”。
-    error: quotaResult.status === "rejected" ? quotaResult.reason.message : null,
+    error: quotaError,
     errors,
     updatedAt: Date.now()
   };
@@ -234,6 +259,7 @@ app.whenReady().then(() => {
   ipcMain.handle("window:setCompact", (_event, compact) => resizeWindow(Boolean(compact)));
   ipcMain.handle("tokens:history", (_event, model) => {
     try {
+      if (!appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
       return readTokenHistory({ model, days: 45 });
     } catch {
       return { daily: {}, hourly: [] };
@@ -241,6 +267,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("antigravity:history", (_event, model) => {
     try {
+      if (!appConfig.enableAntigravity) return { daily: {}, hourly: [] };
       return readAntigravityHistory({ model, days: 45 });
     } catch {
       return { daily: {}, hourly: [] };
@@ -248,11 +275,20 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("tokens:cumulative", (_event, model) => {
     try {
-      const codex = readTokenHistory({ model, days: 9999 });
-      const ag = readAntigravityHistory({ model, days: 9999 });
       const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
-      for (const d of [codex.daily, ag.daily]) {
-        for (const v of Object.values(d)) {
+      if (appConfig.enableClaudeCode) {
+        const codex = readTokenHistory({ model, days: 9999 });
+        for (const v of Object.values(codex.daily)) {
+          sum.input += v.input || 0;
+          sum.cached += v.cached || 0;
+          sum.output += v.output || 0;
+          sum.reasoning += v.reasoning || 0;
+          sum.total += v.total || 0;
+        }
+      }
+      if (appConfig.enableAntigravity) {
+        const ag = readAntigravityHistory({ model, days: 9999 });
+        for (const v of Object.values(ag.daily)) {
           sum.input += v.input || 0;
           sum.cached += v.cached || 0;
           sum.output += v.output || 0;
@@ -264,6 +300,18 @@ app.whenReady().then(() => {
     } catch {
       return null;
     }
+  });
+  ipcMain.handle("settings:read", () => appConfig);
+  ipcMain.handle("settings:update", (_event, newConfig) => {
+    appConfig = { ...appConfig, ...newConfig };
+    try {
+      fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf8");
+    } catch {}
+    if (!appConfig.enableCodex) {
+      codex.dispose();
+    }
+    refreshAndPush();
+    return true;
   });
   ipcMain.on("tray:saveIcon", (_event, dataUrl) => {
     try {

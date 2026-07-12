@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("aiQuota", {
   readAntigravityHistory: (model) => ipcRenderer.invoke("antigravity:history", model),
   readCumulativeTokens: (model) => ipcRenderer.invoke("tokens:cumulative", model),
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),
+  readSettings: () => ipcRenderer.invoke("settings:read"),
+  saveSettings: (config) => ipcRenderer.invoke("settings:update", config),
   onUpdated: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("quota:updated", listener);

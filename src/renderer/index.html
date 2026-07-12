@@ -264,6 +264,21 @@
               <option value="dark" id="themeOptDark">暗色</option>
             </select>
           </label>
+          <div class="setting-section">
+            <strong class="setting-section-title" id="sourceSectionTitle">启用的数据源</strong>
+            <label class="setting-checkbox-row">
+              <input type="checkbox" id="cfgCodex" />
+              <span id="labelCodex">OpenAI Codex 额度与日志</span>
+            </label>
+            <label class="setting-checkbox-row">
+              <input type="checkbox" id="cfgClaudeCode" />
+              <span id="labelClaudeCode">Claude Code 本地日志</span>
+            </label>
+            <label class="setting-checkbox-row">
+              <input type="checkbox" id="cfgAntigravity" />
+              <span id="labelAntigravity">Antigravity 会话估算</span>
+            </label>
+          </div>
         </div>
         <footer class="settings-foot">
           <span id="settingsStatus" class="settings-status"></span>
