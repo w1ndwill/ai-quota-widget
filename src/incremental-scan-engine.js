@@ -5,7 +5,7 @@ const path = require("node:path");
 const os = require("node:os");
 
 // Bump this whenever the parsed event format or parsing rules change.
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 4;
 const SWEEP_INTERVAL_MS = 5 * 60_000;
 
 function getCachePath() {

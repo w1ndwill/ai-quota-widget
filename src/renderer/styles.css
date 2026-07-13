@@ -694,7 +694,9 @@ body {
 
 .model-picker {
   position: relative;
-  width: 185px;
+  width: 205px;
+  min-width: 205px;
+  max-width: min(420px, calc(100vw - 24px));
   z-index: 4;
 }
 
@@ -751,13 +753,32 @@ body {
   left: 0;
   display: none;
   width: 100%;
-  max-height: 174px;
+  max-height: 300px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 5px;
   border: 1px solid rgba(60, 78, 68, 0.14);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 12px 28px rgba(37, 63, 47, 0.18);
+  scrollbar-color: rgba(91, 111, 99, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.model-picker-menu::-webkit-scrollbar {
+  width: 6px;
+  height: 0;
+}
+
+.model-picker-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.model-picker-menu::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(91, 111, 99, 0.42);
+  background-clip: padding-box;
 }
 
 .quota-side .reset-row {
@@ -775,6 +796,18 @@ body {
 
 .model-picker.open .model-picker-menu {
   display: grid;
+  gap: 2px;
+}
+
+.model-picker-group {
+  display: grid;
+  gap: 2px;
+  padding: 1px 0;
+}
+
+.model-picker-source-row {
+  display: flex;
+  align-items: center;
   gap: 2px;
 }
 
@@ -803,6 +836,57 @@ body {
 .model-picker-option.selected {
   background: rgba(88, 200, 104, 0.18);
   color: #116334;
+}
+
+.model-picker-option.model-picker-source {
+  margin-top: 1px;
+  border: 1px solid rgba(103, 87, 231, 0.08);
+  background: rgba(103, 87, 231, 0.07);
+  color: #3b4650;
+  font-weight: 800;
+}
+
+.model-picker-source-row .model-picker-source {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.model-picker-expander {
+  width: 25px;
+  flex: none;
+  padding: 6px 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #68766e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.model-picker-expander:hover {
+  background: rgba(88, 200, 104, 0.12);
+  color: #17633b;
+}
+
+.model-picker-models[hidden] {
+  display: none;
+}
+
+.model-picker-option.model-picker-model {
+  margin-left: 8px;
+  width: calc(100% - 8px);
+  padding: 7px 10px 7px 22px;
+  border-left: 2px solid rgba(103, 87, 231, 0.12);
+  color: #55615b;
+  font-weight: 600;
+}
+
+.model-picker-option.model-picker-model:hover,
+.model-picker-option.model-picker-model.selected {
+  border-left-color: rgba(88, 200, 104, 0.62);
 }
 
 .model-usage-list {

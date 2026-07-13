@@ -195,7 +195,11 @@ async function readCachedLocalUsage(now) {
   if (cachedLocalUsage && now - lastLocalUsageTime < CACHE_TTL) {
     return cachedLocalUsage;
   }
-  cachedLocalUsage = await readUsageInWorker("codexUsage");
+  const sources = [
+    appConfig.enableCodex ? "codex" : null,
+    appConfig.enableClaudeCode ? "claude" : null
+  ].filter(Boolean);
+  cachedLocalUsage = await readUsageInWorker("codexUsage", { sources });
   lastLocalUsageTime = Date.now();
   return cachedLocalUsage;
 }
@@ -209,8 +213,8 @@ async function readCachedAntigravityUsage(now) {
   return cachedAntigravityUsage;
 }
 
-async function readCachedHistory(source, model) {
-  const key = `${source}:${model}`;
+async function readCachedHistory(source, model, sourceFilter = null) {
+  const key = `${source}:${sourceFilter || "all"}:${model}`;
   const cached = historyCache.get(key);
   const now = Date.now();
   if (cached && now - cached.at < HISTORY_CACHE_TTL) {
@@ -221,7 +225,7 @@ async function readCachedHistory(source, model) {
   if (pending) return pending;
 
   const operation = source === "antigravity" ? "antigravityHistory" : "codexHistory";
-  const promise = readUsageInWorker(operation, { model, days: 45 })
+  const promise = readUsageInWorker(operation, { model, source: sourceFilter, days: 45 })
     .then((value) => {
       historyCache.set(key, { at: Date.now(), value });
       return value;
@@ -231,27 +235,29 @@ async function readCachedHistory(source, model) {
   return promise;
 }
 
-async function readCachedCumulativeTokens(model) {
-  const cached = cumulativeCache.get(model);
+async function readCachedCumulativeTokens(selection) {
+  const cacheKey = selection || "all";
+  const cached = cumulativeCache.get(cacheKey);
   const now = Date.now();
   if (cached && now - cached.at < CUMULATIVE_CACHE_TTL) {
     return cached.value;
   }
 
-  const pending = cumulativePending.get(model);
+  const pending = cumulativePending.get(cacheKey);
   if (pending) return pending;
 
   const promise = readUsageInWorker("cumulative", {
-    model,
+    selection: cacheKey,
     enableClaudeCode: appConfig.enableClaudeCode,
+    enableCodex: appConfig.enableCodex,
     enableAntigravity: appConfig.enableAntigravity
   })
     .then((value) => {
-      cumulativeCache.set(model, { at: Date.now(), value });
+      cumulativeCache.set(cacheKey, { at: Date.now(), value });
       return value;
     })
-    .finally(() => cumulativePending.delete(model));
-  cumulativePending.set(model, promise);
+    .finally(() => cumulativePending.delete(cacheKey));
+  cumulativePending.set(cacheKey, promise);
   return promise;
 }
 
@@ -299,7 +305,7 @@ async function readSnapshot() {
   // Parse local logs in a worker so a large transcript cannot block Electron's main loop.
   const [antigravityResult, localResult] = await Promise.allSettled([
     appConfig.enableAntigravity ? readCachedAntigravityUsage(now) : Promise.resolve(null),
-    appConfig.enableClaudeCode ? readCachedLocalUsage(now) : Promise.resolve(null)
+    appConfig.enableCodex || appConfig.enableClaudeCode ? readCachedLocalUsage(now) : Promise.resolve(null)
   ]);
   if (antigravityResult.status === "fulfilled") {
     antigravityTokenUsage = antigravityResult.value;
@@ -383,10 +389,12 @@ app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle("window:setCompact", (_event, compact) => resizeWindow(Boolean(compact)));
-  ipcMain.handle("tokens:history", async (_event, model) => {
+  ipcMain.handle("tokens:history", async (_event, model, sourceFilter) => {
     try {
-      if (!appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
-      return await readCachedHistory("codex", model);
+      if (sourceFilter === "codex" && !appConfig.enableCodex) return { daily: {}, hourly: [] };
+      if (sourceFilter === "claude" && !appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
+      if (!sourceFilter && !appConfig.enableCodex && !appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
+      return await readCachedHistory("codex", model, sourceFilter);
     } catch {
       return { daily: {}, hourly: [] };
     }
@@ -399,9 +407,9 @@ app.whenReady().then(() => {
       return { daily: {}, hourly: [] };
     }
   });
-  ipcMain.handle("tokens:cumulative", async (_event, model) => {
+  ipcMain.handle("tokens:cumulative", async (_event, selection) => {
     try {
-      return await readCachedCumulativeTokens(model);
+      return await readCachedCumulativeTokens(selection);
     } catch {
       return null;
     }

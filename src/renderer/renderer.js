@@ -76,12 +76,32 @@ const HISTORY_VERSION = "2";
 let history = readHistory();
 let mergedModels = [];
 let latestResetCredits = [];
+const MODEL_SOURCES = [
+  { key: "codex", label: "Codex" },
+  { key: "claude", label: "Claude Code" },
+  { key: "antigravity", label: "Antigravity" }
+];
+const expandedModelSources = new Set(MODEL_SOURCES.map((source) => source.key));
 let historyRenderTimer = null;
 let historyRenderInFlight = false;
 let historyRenderQueued = false;
 let historyRenderQueuedImmediate = false;
 let lastHistoryRenderAt = 0;
 const HISTORY_RENDER_INTERVAL = 60_000;
+
+function parseModelSelection(selection) {
+  if (selection === "all") return { kind: "all", source: null, model: "all" };
+  if (selection.startsWith("source:")) return { kind: "source", source: selection.slice(7), model: "all" };
+  const separator = selection.indexOf(":");
+  if (separator > 0) {
+    return { kind: "model", source: selection.slice(0, separator), model: selection.slice(separator + 1) || "all" };
+  }
+  return { kind: "model", source: null, model: selection };
+}
+
+function modelSourceLabel(source) {
+  return MODEL_SOURCES.find((item) => item.key === source)?.label || source;
+}
 
 elements.closeButton.addEventListener("click", () => window.aiQuota.quitWindow());
 elements.compactButton.addEventListener("click", () => setCompact(!isCompact));
@@ -582,30 +602,91 @@ function setupModelSelect() {
 function syncModelSelect(modelUsage) {
   const models = Array.isArray(modelUsage) ? modelUsage : [];
   const modelKeys = models.map((m) => m.sourceModel || m.model);
-  const allowed = new Set(["all", ...modelKeys]);
+  const sourceKeys = [...new Set(models.map((m) => m.source).filter(Boolean))];
+  const allowed = new Set(["all", ...modelKeys, ...sourceKeys.map((source) => `source:${source}`)]);
   if (!allowed.has(selectedModel)) selectedModel = "all";
+  updateModelPickerWidth(models);
   elements.modelPickerMenu.replaceChildren();
-  // Add "all" option
-  const allOption = buildModelOption({ model: "all", label: "\u5168\u90e8\u6a21\u578b" });
+  const allOption = buildModelOption({ model: "all", label: "\u5168\u90e8\u6a21\u578b", kind: "all" });
   elements.modelPickerMenu.append(allOption);
-  // Add each model with source prefix
-  for (const item of models) {
-    const opt = buildModelOption({
-      model: item.sourceModel || item.model,
-      label: item.displayLabel || `[${item.source}] ${item.model}`,
-      source: item.source
+  for (const source of MODEL_SOURCES) {
+    const sourceModels = models.filter((item) => item.source === source.key);
+    if (!sourceModels.length) continue;
+    const group = document.createElement("div");
+    group.className = "model-picker-group";
+    group.setAttribute("role", "group");
+    const sourceRow = document.createElement("div");
+    sourceRow.className = "model-picker-source-row";
+    const sourceOption = buildModelOption({
+      model: `source:${source.key}`,
+      label: `${source.label} · \u5168\u90e8`,
+      source: source.key,
+      kind: "source"
     });
-    elements.modelPickerMenu.append(opt);
+    const expander = document.createElement("button");
+    expander.type = "button";
+    expander.className = "model-picker-expander";
+    expander.setAttribute("aria-label", `展开或收起 ${source.label} 模型`);
+    const modelList = document.createElement("div");
+    modelList.className = "model-picker-models";
+    const updateExpandedState = () => {
+      const expanded = expandedModelSources.has(source.key);
+      modelList.hidden = !expanded;
+      expander.setAttribute("aria-expanded", String(expanded));
+      expander.textContent = expanded ? "▾" : "▸";
+    };
+    expander.addEventListener("click", (event) => {
+      event.stopPropagation();
+      expandedModelSources.has(source.key)
+        ? expandedModelSources.delete(source.key)
+        : expandedModelSources.add(source.key);
+      updateExpandedState();
+    });
+    sourceRow.append(sourceOption, expander);
+    group.append(sourceRow);
+    for (const item of sourceModels) {
+      modelList.append(buildModelOption({
+        model: item.sourceModel || item.model,
+        label: item.model === "unknown" ? "\u672a\u77e5\u6a21\u578b" : item.model,
+        source: source.key,
+        kind: "model"
+      }));
+    }
+    group.append(modelList);
+    updateExpandedState();
+    elements.modelPickerMenu.append(group);
   }
-  // Update trigger label
+  const parsed = parseModelSelection(selectedModel);
   const sel = models.find((m) => (m.sourceModel || m.model) === selectedModel);
-  elements.modelPickerLabel.textContent = selectedModel === "all" ? "\u5168\u90e8\u6a21\u578b" : (sel?.displayLabel || selectedModel);
+  elements.modelPickerLabel.textContent = parsed.kind === "all"
+    ? "\u5168\u90e8\u6a21\u578b"
+    : parsed.kind === "source"
+      ? `${modelSourceLabel(parsed.source)} · \u5168\u90e8`
+      : (sel?.model || parsed.model || selectedModel);
+}
+
+function updateModelPickerWidth(models) {
+  if (!elements.modelPickerTrigger || !elements.modelPicker) return;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.font = getComputedStyle(elements.modelPickerTrigger).font;
+  const labels = [
+    "全部模型",
+    ...MODEL_SOURCES.map((source) => `${source.label} · 全部`),
+    ...models.map((item) => item.model === "unknown" ? "未知模型" : item.model)
+  ];
+  const longest = Math.max(...labels.map((label) => context.measureText(label).width), 0);
+  const width = Math.min(420, Math.max(205, Math.ceil(longest + 58)));
+  elements.modelPicker.style.width = `${width}px`;
 }
 
 function buildModelOption(item) {
   const option = document.createElement("button");
   option.type = "button";
   option.className = "model-picker-option";
+  if (item.kind === "source") option.classList.add("model-picker-source");
+  if (item.kind === "model") option.classList.add("model-picker-model");
   option.setAttribute("role", "option");
   option.setAttribute("aria-selected", String(item.model === selectedModel));
   option.classList.toggle("selected", item.model === selectedModel);
@@ -630,6 +711,8 @@ function modelLabel(item) {
 function sourceLabel(stats) {
   if (!stats) return "\u65e0\u6570\u636e";
   const suffix = tokenRange === "cumulative" ? " · 累计" : "";
+  if (stats.source === "codex") return "Codex" + suffix;
+  if (stats.source === "claude") return "Claude Code" + suffix;
   if (stats.source === "antigravity") return "Antigravity \u00b7 \u4f30\u7b97" + suffix;
   if (stats.source === "merged") return "Codex + Antigravity" + suffix;
   return (stats.source === "localSessions" || stats.source === "localModel" ? "\u672c\u5730\u4f1a\u8bdd" : "\u63a5\u53e3\u6570\u636e") + suffix;
@@ -649,44 +732,87 @@ function closeModelPicker() {
 function buildMergedModels(snapshot) {
   const allModels = [];
 
-  function addModels(list, sourceTag) {
+  function addModels(list, defaultSource) {
     if (!Array.isArray(list)) return;
     for (const m of list) {
+      const source = m.source || defaultSource;
       allModels.push({
         ...m,
-        source: sourceTag,
-        sourceModel: `${sourceTag}:${m.model}`,
-        displayLabel: `[${sourceTag}] ${m.model}`
+        source,
+        sourceModel: `${source}:${m.model}`,
+        displayLabel: m.model
       });
     }
   }
 
-  addModels(snapshot?.localTokenUsage?.modelUsage, "C");
-  addModels(snapshot?.quota?.tokenStats?.modelUsage, "C");
-  addModels(snapshot?.antigravityTokenUsage?.modelUsage, "A");
+  addModels(snapshot?.localTokenUsage?.modelUsage, "codex");
+  addModels(snapshot?.localTokenUsage?.modelCatalog, "codex");
+  addModels(snapshot?.quota?.tokenStats?.modelUsage, "codex");
+  addModels(snapshot?.antigravityTokenUsage?.modelUsage, "antigravity");
+  addModels(snapshot?.antigravityTokenUsage?.modelCatalog, "antigravity");
 
   const seen = new Set();
   return allModels.filter((m) => {
     if (seen.has(m.sourceModel)) return false;
     seen.add(m.sourceModel);
     return true;
-  }).sort((a, b) => b.total - a.total);
+  }).sort((a, b) => b.total - a.total || a.source.localeCompare(b.source) || a.model.localeCompare(b.model));
 }
 
 function getTokenForModel(snapshot, modelKey) {
-  if (modelKey === "all") return mergeAllTokens(snapshot);
-  const [source, ...rest] = modelKey.split(":");
-  const model = rest.join(":");
-  if (source === "C") return getSourceModelData(snapshot?.localTokenUsage, snapshot?.quota?.tokenStats, model, "codex");
-  if (source === "A") return getSourceModelData(snapshot?.antigravityTokenUsage, null, model, "antigravity");
+  const selection = parseModelSelection(modelKey);
+  if (selection.kind === "all") return mergeAllTokens(snapshot);
+  if (selection.kind === "source") return mergeSourceTokens(snapshot, selection.source);
+  if (selection.source === "antigravity") return getSourceModelData(snapshot?.antigravityTokenUsage, null, selection.model, "antigravity");
+  if (selection.source === "codex" || selection.source === "claude") {
+    return getSourceModelData(snapshot?.localTokenUsage, snapshot?.quota?.tokenStats, selection.model, selection.source);
+  }
   return mergeAllTokens(snapshot);
 }
 
 function getSourceModelData(primary, fallback, model, source) {
-  const modelData = primary?.modelUsage?.find((m) => m.model === model)
-    || fallback?.modelUsage?.find((m) => m.model === model);
+  const modelData = primary?.modelUsage?.find((m) => m.model === model && (!m.source || m.source === source))
+    || fallback?.modelUsage?.find((m) => m.model === model && (!m.source || m.source === source));
   if (modelData) return { ...modelData, source, cacheHitRate: (modelData.cached === null || modelData.cached === undefined || modelData.input === 0) ? null : Math.round((modelData.cached / modelData.input) * 100) };
   return null;
+}
+
+function mergeSourceTokens(snapshot, source) {
+  if (source === "antigravity") {
+    return mergeTokenItems(snapshot?.antigravityTokenUsage?.modelUsage, source);
+  }
+  const localModels = (snapshot?.localTokenUsage?.modelUsage || []).filter((item) => !item.source || item.source === source);
+  const merged = mergeTokenItems(localModels, source);
+  if (merged) return merged;
+  if (source === "codex" && snapshot?.quota?.tokenStats?.total != null) {
+    return { ...snapshot.quota.tokenStats, source: "codex" };
+  }
+  return null;
+}
+
+function mergeTokenItems(items, source) {
+  if (!Array.isArray(items) || !items.length) return null;
+  const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+  let hasData = false;
+  let cacheKnown = true;
+  for (const item of items) {
+    if (item?.total == null) continue;
+    hasData = true;
+    sum.input += item.input || 0;
+    sum.cached += item.cached || 0;
+    sum.output += item.output || 0;
+    sum.reasoning += item.reasoning || 0;
+    sum.total += item.total || 0;
+    if (item.cached == null) cacheKnown = false;
+  }
+  if (!hasData) return null;
+  return {
+    ...sum,
+    cached: cacheKnown ? sum.cached : null,
+    source,
+    cacheHitRate: cacheKnown && sum.input > 0 ? Math.round((sum.cached / sum.input) * 100) : null,
+    modelUsage: items
+  };
 }
 
 function mergeAllTokens(snapshot) {
@@ -887,15 +1013,14 @@ async function renderTokenStats(stats, modelUsage, renderId) {
 
   if (tokenRange === "cumulative") {
     titleText = "累计 Token";
-    const modelArg = selectedModel === "all" ? "all" : selectedModel.split(":").slice(1).join(":");
     try {
-      const cumStats = await window.aiQuota.readCumulativeTokens(modelArg);
+      const cumStats = await window.aiQuota.readCumulativeTokens(selectedModel);
       if (renderId !== tokenRenderGeneration) return;
       if (cumStats) {
         displayStats = {
           ...cumStats,
-          source: selectedModel === "all" ? "merged" : (selectedModel.startsWith("A:") ? "antigravity" : "codex"),
-          cacheHitRate: (cumStats.cached == null || cumStats.input === 0) ? null : Math.round((cumStats.cached / cumStats.input) * 100)
+          source: parseModelSelection(selectedModel).source || (selectedModel === "all" ? "merged" : null),
+          cacheHitRate: cumStats.cacheHitRate ?? ((cumStats.cached == null || cumStats.input === 0) ? null : Math.round((cumStats.cached / cumStats.input) * 100))
         };
       }
     } catch (e) {
@@ -908,7 +1033,7 @@ async function renderTokenStats(stats, modelUsage, renderId) {
       displayStats = {
         ...stats,
         ...selectedUsage,
-        source: "localModel",
+        source: selectedUsage.source || "localModel",
         cacheHitRate: (selectedUsage.cached == null || selectedUsage.input === 0) ? null : Math.round((selectedUsage.cached / selectedUsage.input) * 100)
       };
     }
@@ -1046,15 +1171,13 @@ async function renderHistory() {
       hourly = [];
     }
   } else {
-    // Single model — determine source
-    const [source] = modelForRender.split(":");
+    const selection = parseModelSelection(modelForRender);
     try {
       let historyData;
-      if (source === "A") {
-        historyData = await window.aiQuota.readAntigravityHistory(modelForRender.split(":").slice(1).join(":"));
+      if (selection.source === "antigravity") {
+        historyData = await window.aiQuota.readAntigravityHistory(selection.model);
       } else {
-        // Codex
-        historyData = await window.aiQuota.readTokenHistory(modelForRender.split(":").slice(1).join(":"));
+        historyData = await window.aiQuota.readTokenHistory(selection.model, selection.source);
       }
       daily = historyData.daily;
       hourly = historyData.hourly;

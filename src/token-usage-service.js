@@ -5,11 +5,18 @@ const os = require("node:os");
 const path = require("node:path");
 const { scanFilesIncrementally } = require("./incremental-scan-engine");
 
-function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSessionsRoot() } = {}) {
+function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSessionsRoot(), sources = null } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
   const recent = readRecentUsageEvents({ since, root });
   const sessions = new Set(recent.events.map((event) => event.file));
-  const usages = recent.events.length ? recent.events : recent.fallbacks;
+  const eventFiles = new Set(recent.events.map((usage) => usage.file));
+  const allUsages = [
+    ...recent.events,
+    ...recent.fallbacks.filter((usage) => !eventFiles.has(usage.file))
+  ];
+  const usages = Array.isArray(sources)
+    ? allUsages.filter((usage) => sources.includes(usage.source))
+    : allUsages;
 
   const totals = usages.reduce(
     (acc, item) => {
@@ -48,25 +55,25 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
     total: totals.total,
     cacheHitRate: Math.round((totals.cached / Math.max(1, totals.input)) * 100),
     modelUsage,
-    sessions: sessions.size || recent.fallbacks.length,
+      sessions: new Set(usages.map((usage) => usage.file)).size || sessions.size,
     since
   };
 }
 
-function readDailyTokenHistory({ now = Date.now(), days = 30, root = defaultSessionsRoot(), model = "all" } = {}) {
+function readDailyTokenHistory({ now = Date.now(), days = 30, root = defaultSessionsRoot(), model = "all", source = null } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
   const dailyMap = {};
   const recent = readRecentUsageEvents({ since, root });
-  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
+  for (const event of recent.events.filter((event) => matchesModel(event, model, source))) {
     addUsage(dailyMap, localDateKey(event.t), event);
   }
-  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model, source))) {
     addUsage(dailyMap, localDateKey(fallback.t), fallback);
   }
   return dailyMap;
 }
 
-function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSessionsRoot(), model = "all" } = {}) {
+function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSessionsRoot(), model = "all", source = null } = {}) {
   const hourMs = 60 * 60 * 1000;
   const since = now - hours * hourMs;
   const currentHour = Math.floor(now / hourMs) * hourMs;
@@ -81,11 +88,11 @@ function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSe
     total: 0
   }));
   const recent = readRecentUsageEvents({ since, root });
-  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
+  for (const event of recent.events.filter((event) => matchesModel(event, model, source))) {
     const index = Math.floor((event.t - firstHour) / hourMs);
     if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], event);
   }
-  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model, source))) {
     const index = Math.floor((fallback.t - firstHour) / hourMs);
     if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], fallback);
   }
@@ -93,9 +100,11 @@ function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSe
 }
 
 function readRecentUsageEvents({ since, root }) {
-  const filePaths = listJsonlFiles(root);
+  const fileEntries = listJsonlFiles(root);
+  const filePaths = fileEntries.map(({ file }) => file);
+  const sourceByFile = new Map(fileEntries.map(({ file, source }) => [file, source]));
   const allParsedData = scanFilesIncrementally(filePaths, (file) => {
-    const allFileEvents = readUsageEvents(file);
+    const allFileEvents = readUsageEvents(file, sourceByFile.get(file));
     let fallback = null;
     if (!allFileEvents.length) {
       fallback = readLatestUsage(file);
@@ -117,7 +126,8 @@ function readRecentUsageEvents({ since, root }) {
       const stat = safeStat(file);
       const mtimeMs = stat?.mtimeMs ?? 0;
       if (mtimeMs >= since) {
-        fallbacks.push({ file, t: mtimeMs, model: "unknown", ...data.fallback });
+        const source = sourceByFile.get(file);
+        fallbacks.push({ file, t: mtimeMs, model: "unknown", ...(source ? { source } : {}), ...data.fallback });
       }
     }
   }
@@ -125,11 +135,13 @@ function readRecentUsageEvents({ since, root }) {
   return { events, fallbacks };
 }
 
-function matchesModel(usage, model) {
-  return model === "all" || (usage.model ?? "unknown") === model;
+function matchesModel(usage, model, source = null) {
+  const modelMatches = model === "all" || (usage.model ?? "unknown") === model;
+  const sourceMatches = !source || source === "all" || usage.source === source;
+  return modelMatches && sourceMatches;
 }
 
-function readUsageEvents(file) {
+function readUsageEvents(file, source = null) {
   const events = [];
   let currentModel = null;
   const content = fs.readFileSync(file, "utf8");
@@ -147,7 +159,7 @@ function readUsageEvents(file) {
           if (seenMessageIds.has(messageId)) continue;
           seenMessageIds.add(messageId);
         }
-        events.push({ t: timestamp, model: currentModel ?? "unknown", ...normalizeUsage(usage) });
+        events.push({ t: timestamp, model: currentModel ?? "unknown", ...(source ? { source } : {}), ...normalizeUsage(usage) });
       }
     } catch {
       // Ignore partial or non-JSON lines.
@@ -160,10 +172,12 @@ function summarizeModelUsage(usages) {
   const models = new Map();
   for (const usage of usages) {
     const model = usage.model || "unknown";
-    if (!models.has(model)) {
-      models.set(model, { model, input: 0, cached: 0, output: 0, reasoning: 0, total: 0 });
+    const source = usage.source || "";
+    const key = `${source}\u0000${model}`;
+    if (!models.has(key)) {
+      models.set(key, { model, ...(source ? { source } : {}), input: 0, cached: 0, output: 0, reasoning: 0, total: 0 });
     }
-    addUsageToBucket(models.get(model), usage);
+    addUsageToBucket(models.get(key), usage);
   }
   return [...models.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
 }
@@ -225,10 +239,12 @@ function normalizeUsage(usage) {
 
 function listJsonlFiles(root) {
   const result = [];
-  const roots = (Array.isArray(root) ? root : [root]).filter((item) => item && fs.existsSync(item));
+  const roots = (Array.isArray(root) ? root : [root])
+    .filter((item) => item && fs.existsSync(item))
+    .map((item) => ({ path: item, source: sourceForRoot(item) }));
   const stack = [...roots];
   while (stack.length) {
-    const dir = stack.pop();
+    const { path: dir, source } = stack.pop();
     let entries = [];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -238,13 +254,20 @@ function listJsonlFiles(root) {
     for (const entry of entries) {
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        stack.push(file);
+        stack.push({ path: file, source });
       } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        result.push(file);
+        result.push({ file, source });
       }
     }
   }
   return result;
+}
+
+function sourceForRoot(root) {
+  const normalized = path.normalize(root).toLowerCase();
+  if (normalized.includes(path.normalize(path.join(".claude", "projects")).toLowerCase())) return "claude";
+  if (normalized.includes(path.normalize(".codex").toLowerCase())) return "codex";
+  return null;
 }
 
 function safeStat(file) {
@@ -266,7 +289,7 @@ function readNumber(value, fallback) {
   return fallback;
 }
 
-function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defaultSessionsRoot(), model = "all" } = {}) {
+function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defaultSessionsRoot(), model = "all", source = null } = {}) {
   const dayMs = 24 * 60 * 60 * 1000;
   const hourMs = 60 * 60 * 1000;
   const dailySince = now - days * dayMs;
@@ -274,10 +297,10 @@ function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defa
   const recent = readRecentUsageEvents({ since: dailySince, root });
 
   const dailyMap = {};
-  for (const event of recent.events.filter((event) => matchesModel(event, model))) {
+  for (const event of recent.events.filter((event) => matchesModel(event, model, source))) {
     addUsage(dailyMap, localDateKey(event.t), event);
   }
-  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model))) {
+  for (const fallback of recent.fallbacks.filter((fallback) => matchesModel(fallback, model, source))) {
     addUsage(dailyMap, localDateKey(fallback.t), fallback);
   }
 
@@ -294,13 +317,13 @@ function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defa
   }));
 
   for (const event of recent.events) {
-    if (event.t >= hourlySince && matchesModel(event, model)) {
+    if (event.t >= hourlySince && matchesModel(event, model, source)) {
       const index = Math.floor((event.t - firstHour) / hourMs);
       if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], event);
     }
   }
   for (const fallback of recent.fallbacks) {
-    if (fallback.t >= hourlySince && matchesModel(fallback, model)) {
+    if (fallback.t >= hourlySince && matchesModel(fallback, model, source)) {
       const index = Math.floor((fallback.t - firstHour) / hourMs);
       if (index >= 0 && index < buckets.length) addUsageToBucket(buckets[index], fallback);
     }

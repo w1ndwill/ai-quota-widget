@@ -223,15 +223,12 @@ function readRecentEvents({ since, root }) {
 }
 
 function extractModel(step) {
-  if (step.type === "USER_INPUT" && step.content) {
-    const settingsChangeMatch = step.content.match(/Model Selection`?\s+from\s+\S+\s+to\s+([\s\S]+?)\.(?:\s+[A-Z\u4e00-\u9fa5]|$)/i);
-    if (settingsChangeMatch) {
-      return settingsChangeMatch[1].trim();
-    }
-    const parenMatch = step.content.match(/to\s+(.+)\)\./);
-    if (parenMatch) return parenMatch[1].trim() + ")";
-    const simpleMatch = step.content.match(/to\s+(.+?)\.\s/);
-    if (simpleMatch) return simpleMatch[1].trim();
+  if (step.type === "USER_INPUT" && typeof step.content === "string") {
+    const settingsBlock = step.content.match(/<USER_SETTINGS_CHANGE>([\s\S]*?)(?:<\/USER_SETTINGS_CHANGE>|$)/i)?.[1] || "";
+    const settingsChangeMatch = settingsBlock.match(
+      /Model Selection`?\s+from\s+\S+\s+to\s+([\s\S]+?)(?:\.\s+(?=[A-Z\u4e00-\u9fa5])|$)/i
+    );
+    if (settingsChangeMatch) return settingsChangeMatch[1].trim().replace(/\.$/, "");
   }
   if (typeof step.model === "string" && step.model.trim()) return step.model.trim();
   return null;
@@ -327,5 +324,6 @@ module.exports = {
   readLocalTokenUsage,
   readDailyTokenHistory,
   readHourlyTokenHistory,
-  readTokenHistory
+  readTokenHistory,
+  extractModel
 };

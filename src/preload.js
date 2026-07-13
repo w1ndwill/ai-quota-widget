@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("aiQuota", {
   toggleAlwaysOnTop: () => ipcRenderer.invoke("window:toggleAlwaysOnTop"),
   quitWindow: () => ipcRenderer.invoke("window:quit"),
   setCompact: (compact) => ipcRenderer.invoke("window:setCompact", compact),
-  readTokenHistory: (model) => ipcRenderer.invoke("tokens:history", model),
+  readTokenHistory: (model, source) => ipcRenderer.invoke("tokens:history", model, source),
   readAntigravityHistory: (model) => ipcRenderer.invoke("antigravity:history", model),
   readCumulativeTokens: (model) => ipcRenderer.invoke("tokens:cumulative", model),
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),

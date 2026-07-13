@@ -21,6 +21,7 @@ const {
   readHourlyTokenHistory
 } = require("../src/token-usage-service");
 const { CodexService } = require("../src/codex-service");
+const { extractModel } = require("../src/antigravity-token-service");
 
 test("keeps the server-reported remaining quota before a future reset", async () => {
   const service = new CodexService();
@@ -365,6 +366,38 @@ test("groups local token usage by the model active when each event was recorded"
   assert.equal(hourly.reduce((sum, bucket) => sum + bucket.total, 0), 80);
 });
 
+test("keeps Codex and Claude model usage in separate source groups", (t) => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { readLocalTokenUsage, readTokenHistory } = require("../src/token-usage-service");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-bar-source-usage-"));
+  const codexRoot = path.join(dir, ".codex", "sessions");
+  const claudeRoot = path.join(dir, ".claude", "projects");
+  fs.mkdirSync(codexRoot, { recursive: true });
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const now = Date.parse("2026-07-11T12:00:00Z");
+  const codexFile = [
+    { timestamp: new Date(now).toISOString(), payload: { model: "gpt-5.6-sol" } },
+    { timestamp: new Date(now + 1).toISOString(), payload: { info: { last_token_usage: { input_tokens: 100, total_tokens: 100 } } } }
+  ];
+  const claudeFile = [
+    { timestamp: new Date(now).toISOString(), message: { model: "claude-opus-4", usage: { input_tokens: 60, output_tokens: 20 } } }
+  ];
+  fs.writeFileSync(path.join(codexRoot, "codex.jsonl"), codexFile.map(JSON.stringify).join("\n"));
+  fs.writeFileSync(path.join(claudeRoot, "claude.jsonl"), claudeFile.map(JSON.stringify).join("\n"));
+
+  const usage = readLocalTokenUsage({ now: now + 60_000, root: [codexRoot, claudeRoot] });
+  assert.deepEqual(usage.modelUsage.map(({ source, model, total }) => ({ source, model, total })), [
+    { source: "codex", model: "gpt-5.6-sol", total: 100 },
+    { source: "claude", model: "claude-opus-4", total: 80 }
+  ]);
+  const claudeHistory = readTokenHistory({ now: now + 60_000, root: [codexRoot, claudeRoot], source: "claude" });
+  assert.equal(Object.values(claudeHistory.daily)[0].total, 80);
+});
+
 test("formats duration labels", () => {
   assert.equal(labelForDuration(45, "fallback"), "45分钟");
   assert.equal(labelForDuration(90, "fallback"), "1.5小时");
@@ -376,6 +409,30 @@ test("normalizes second and millisecond timestamps", () => {
   assert.equal(normalizeTimestamp(1800000000), 1800000000000);
   assert.equal(normalizeTimestamp(1800000000000), 1800000000000);
   assert.equal(normalizeTimestamp(null), null);
+});
+
+test("only extracts Antigravity models from explicit settings changes", () => {
+  assert.equal(
+    extractModel({
+      type: "USER_INPUT",
+      content: "make MULTIPLE non-contiguous edits to `d:\\DevApps\\skill_store\\static\\index.css`."
+    }),
+    null
+  );
+  assert.equal(
+    extractModel({
+      type: "USER_INPUT",
+      content: "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Claude Opus 4.6 (Thinking). No need to comment on this change."
+    }),
+    "Claude Opus 4.6 (Thinking)"
+  );
+  assert.equal(
+    extractModel({
+      type: "USER_INPUT",
+      content: "<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 3.5 Flash (High)."
+    }),
+    "Gemini 3.5 Flash (High)"
+  );
 });
 
 test("reads Claude Code projects session log with message.model, message.usage and deduplicates", (t) => {
