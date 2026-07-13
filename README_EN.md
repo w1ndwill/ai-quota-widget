@@ -1,72 +1,104 @@
 # AI Quota Widget
 
-A desktop widget that monitors OpenAI Codex remaining quota and tracks local token consumption (Codex, Claude Code, and Antigravity) with precise estimates and cache hit rate analytics.
+A desktop widget for monitoring the available Codex quota and local token usage from Codex, Claude Code, and Antigravity.
 
-[中文版](README.md)
+[中文版本](README.md)
 
-## 📋 Prerequisites
+## Screenshots
 
-- **OS Support**: Windows 10/11. No Node.js installation is required for binary releases.
-- **Codex Client**: Requires the official OpenAI Codex client to be installed and logged in. The program automatically auto-discovers `codex.exe` on your local machine; it does not store, upload, or share any account credentials.
-- **Rate Limit API**: Quota numbers rely on Codex's local `app-server` interface. If Codex is logged out, offline, or experiencing network issues, the widget will flag "Refresh Failed" and preserve your last cached snapshot.
-- **Token Logging**: Token usage statistics are scanned from local Codex, Claude Code, and Antigravity session history. If you have not used these tools, the token usage cards will display empty by default. (Note: If you only wish to track local Claude Code or Antigravity logs, the widget will degrade gracefully. The quota ring will show "Refresh Failed", but the token trend graphs and cumulative cards will continue to work perfectly).
+### Quota and token overview
 
-## 🌟 Key Features
+![AI Quota dashboard](docs/images/dashboard-overview.png)
 
-- **Official Quota Monitoring**: Displays the remaining percentage and resetting timers of your main Codex 5-hour and Weekly quota windows.
-- **Detailed Reset Cards**: Highlights the count of available Reset Credits and the nearest expiration date. Click the card to view status, grant dates, and expiry dates for all active cards.
-- **Cold-Start Snapshots**: Restores and displays the last known clean quota snapshots instantly upon launch, preventing empty displays while awaiting active API responses.
-- **Proxy Anti-Pollution Shield**: Intercepts routed proxy traffic. When queries are redirected via tools like `ccswitch` to third-party endpoints (e.g., DeepSeek), the widget ignores incoming mock rate limits and locks the official quota display.
-- **Multi-Dimensional Token Statistics**:
-  - **Local Codex & Claude Code**: Scans and parses project session transcripts (including Claude Code). Supports `cache_read_input_tokens` and integrates message-ID deduplication to prevent double-counting.
-  - **Antigravity Estimation**: Computes character counts from Antigravity session logs, incorporating a context-accumulation simulation baseline offset (35,000 characters) and a translation ratio of `CHARS_PER_TOKEN = 2.8` to match real API usage bills.
-- **Intelligent Cache Hit Rate**: Computes cache hit rates for the last 24h and 7 days. Excludes Antigravity (which does not report cache parameters) from global hit rate calculations to prevent dilution of your main account's 91% cache hit rate. Single-model view displays "N/A" for uncacheable models.
-- **Sleek & Fluid UI**:
-  - **Expandable Width**: The model selector is widened to `185px` to fully accommodate long custom model labels.
-  - **Pill Range Selector**: Switch between "24h" and "Cumulative" (All-Time) token ranges using a sliding pill toggle with smooth opacity transitions.
-  - **Dark Theme Optimization**: Mutes the toggle button colors in the dark theme to soft translucent grays, preserving an elegant night-mode glassmorphic style.
-  - **Single Instance Control**: Implements single-instance locking. Running a duplicate process automatically closes itself and focuses the existing widget.
-- **High-Performance Incremental Scanning**: Implements a persistent metadata cache index (`history_accumulator.json`) in the user profile directory. Compares last modified times (`mtimeMs`) and file sizes, avoiding disk reads and JSON parsing for 99% of unchanged log files.
+The dashboard brings together quota status, 24-hour and cumulative token use, trend charts, a daily heatmap, and cache-hit analysis. The values in the screenshot are local sample data; actual content depends on the clients and session logs available on the machine.
 
-## 🛠️ Local Development
+### Filter models by source
 
-Requires Node.js 20 or higher.
+![Model source filter](docs/images/model-source-filter.png)
+
+Models are grouped by source. Expand or collapse Codex, Claude Code, and Antigravity, choose a source-level `All` entry to aggregate that source, or drill down to an individual model.
+
+### Data sources and appearance
+
+![Data-source and appearance settings](docs/images/settings-data-sources.png)
+
+Enable Codex, Claude Code, and Antigravity independently, then switch the language and light or dark theme in the widget.
+
+### Compact mode
+
+![Compact mode](docs/images/compact-mode.png)
+
+Compact mode keeps only the quota summary for a long-running, always-on-top desktop view. Use the button on the right to restore the full panel.
+
+## Before using a release
+
+- **Windows 10/11** is supported. Release builds do not require Node.js.
+- Install and sign in to the official Codex desktop client first. The application locates `codex.exe` on the current machine only; it does not embed, upload, or share account credentials.
+- Quota data comes from Codex's local `app-server`. If Codex is signed out, the interface version is incompatible, or the service is unavailable, the widget preserves the most recent snapshot and reports a read failure.
+- Token statistics read existing local session logs from Codex, Claude Code, and Antigravity. A missing client or unused source simply appears without data. When Codex cannot be found, local Claude Code and Antigravity token statistics continue to work; only the official quota area reports a read failure.
+
+> Do not hard-code a developer's absolute `codex.exe` path into a release. Installation paths and client versions differ by machine, so the application discovers a usable local path at runtime.
+
+## Key features
+
+- **Official quota monitoring**: Shows the currently available Codex weekly quota and reset time. The removed five-hour window is shown as unlimited so it cannot be confused with the weekly quota.
+- **Reliable quota reads**: Reads the local Codex `app-server`; a failed read is explicitly marked instead of presenting stale data as current.
+- **Reset-card details**: Shows the available reset-card count and nearest expiry. Click for the complete card list, including status, grant date, and expiry date.
+- **Cold-start snapshots**: Restores the latest quota snapshot while a live read is still in progress.
+- **Multi-source token statistics**:
+  - **Codex and Claude Code**: Parses local project transcripts, supports `cache_read_input_tokens`, and deduplicates by message ID to avoid double counting.
+  - **Antigravity estimation**: Parses local Antigravity sessions and estimates context accumulation using a baseline offset and `CHARS_PER_TOKEN = 2.8`.
+- **Cache-hit analysis**: Shows 24-hour and cumulative cache-hit rates where the provider exposes cache metrics. Antigravity-only selections correctly show “Unavailable” instead of a misleading `0%`.
+- **Model source hierarchy**: Dynamically sizes the selector to the longest visible label, supports source-level aggregation and collapsible source groups, and avoids a horizontal scrollbar.
+- **High-performance incremental scanning**: Uses a persistent metadata index and a 15-second disk-I/O cache to avoid re-reading unchanged logs during frequent refreshes.
+
+## Local development
+
+Node.js 20 or newer is required.
 
 ```powershell
 # Install dependencies
 npm install
 
-# Start development build
+# Start the development build
 npm start
 
 # Run unit tests
 npm test
 ```
 
-## 📦 Packaging
+## Packaging
 
-To compile a portable Win32 folder:
+Build the unpacked Windows application:
 
 ```powershell
 npm run build:win
 ```
 
-The output will be generated inside `release/win-unpacked/`. Double-click `AI 额度.exe` to run.
+The output is written to `release/win-unpacked/`.
 
-## 📁 Project Structure
+Build the installable release package:
+
+```powershell
+npm run release:win
+```
+
+Release artifacts are written to `release/`. See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+## Project structure
 
 ```text
 src/
-  ├── main.js                        # Main process, cache controls, single-instance lock
-  ├── preload.js                     # IPC context bridge
-  ├── codex-service.js               # Quota logic, proxy anti-pollution shield
-  ├── token-usage-service.js         # Codex & Claude Code parser and deduplicator
-  ├── antigravity-token-service.js   # Antigravity cumulative simulator
-  ├── quota-normalizer.js            # Unified data shape normalizer
-  └── renderer/                      # Front-end UI (HTML, CSS, JS)
-test/                                # Test suites
+  |- main.js                        # Main process, cache control, single-instance lock
+  |- preload.js                     # IPC bridge
+  |- codex-service.js               # Codex app-server quota reads and snapshots
+  |- token-usage-service.js         # Codex and Claude Code log parsing/deduplication
+  |- antigravity-token-service.js   # Antigravity context accumulation estimator
+  |- quota-normalizer.js            # Shared quota data normalization
+  `- renderer/                      # Front-end UI (HTML / CSS / JS)
+test/                               # Unit tests
 ```
 
-## 📄 License
+## License
 
 [MIT](LICENSE)
