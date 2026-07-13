@@ -1774,14 +1774,17 @@ body.compact.refreshing .metric-side strong {
 
 .settings-card {
   position: relative;
-  width: 340px;
+  width: 400px;
   padding: 20px 22px 18px;
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 18px;
   background: rgba(248, 252, 249, 0.97);
   box-shadow: 0 24px 64px rgba(24, 42, 34, 0.28);
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
 }
 
 .settings-head {
@@ -1798,6 +1801,19 @@ body.compact.refreshing .metric-side strong {
 .settings-body {
   display: grid;
   gap: 14px;
+  min-height: 0;
+  padding-right: 5px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(91, 111, 99, 0.36);
 }
 
 .setting-row {
@@ -1842,6 +1858,9 @@ body.compact.refreshing .metric-side strong {
   font-size: 11px;
   font-weight: 700;
   min-width: 0;
+  flex: 1;
+  margin-right: 12px;
+  line-height: 1.35;
 }
 
 .settings-status.ok { color: #2d7a3f; }
@@ -1870,134 +1889,94 @@ body.compact.refreshing .metric-side strong {
   transform: scale(0.96);
 }
 
-.setting-section {
-  display: grid;
-  gap: 8px;
+.settings-save-btn:disabled {
+  opacity: 0.62;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
 }
 
-.setting-section-head {
+.hotkey-section {
+  padding-top: 12px;
+  border-top: 1px solid rgba(69, 88, 77, 0.12);
+}
+
+.hotkey-section-head,
+.hotkey-row,
+.hotkey-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
 
-.setting-section-head span {
+.hotkey-section-head {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hotkey-hint {
+  margin: -2px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hotkey-row {
+  justify-content: space-between;
+  gap: 10px;
   color: #344a3e;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.add-key-btn {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(88, 200, 104, 0.35);
-  border-radius: 6px;
-  background: rgba(88, 200, 104, 0.12);
-  color: #2d7a3f;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 800;
-  cursor: pointer;
-  line-height: 1;
-  transition: background 140ms ease;
+.hotkey-control {
+  min-width: 0;
+  gap: 5px;
 }
 
-.add-key-btn:hover {
-  background: rgba(88, 200, 104, 0.24);
-}
-
-.key-list {
-  display: grid;
-  gap: 6px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.key-row {
-  display: grid;
-  grid-template-columns: 1fr 2fr auto auto auto;
-  gap: 4px;
-  align-items: center;
-}
-
-.key-row input {
-  padding: 5px 8px;
+.hotkey-input {
+  width: 124px;
+  padding: 6px 8px;
   border: 1px solid rgba(69, 88, 77, 0.24);
-  border-radius: 6px;
+  border-radius: 7px;
   background: rgba(255, 255, 255, 0.84);
   color: #23382c;
   font: inherit;
   font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
   outline: none;
-  min-width: 0;
 }
 
-.key-row input:focus {
-  border-color: rgba(88, 200, 104, 0.6);
-  box-shadow: 0 0 0 2px rgba(88, 200, 104, 0.12);
+.hotkey-input::placeholder {
+  color: var(--muted);
+  font-weight: 600;
 }
 
-.key-row .key-name-input {
-  font-weight: 700;
+.hotkey-input:focus {
+  border-color: rgba(88, 200, 104, 0.68);
+  box-shadow: 0 0 0 3px rgba(88, 200, 104, 0.12);
 }
 
-.test-key-btn {
-  padding: 4px 8px;
-  border: 1px solid rgba(103, 87, 231, 0.3);
-  border-radius: 5px;
-  background: rgba(103, 87, 231, 0.08);
-  color: #4a3d99;
-  cursor: pointer;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: background 140ms ease;
-}
-
-.test-key-btn:hover:not(:disabled) {
-  background: rgba(103, 87, 231, 0.18);
-}
-
-.test-key-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.key-status {
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
-}
-
-.key-status.ok { color: #2d7a3f; }
-.key-status.fail { color: #b42318; }
-.key-status.checking { color: #7a6218; }
-
-.remove-key-btn {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
+.hotkey-text-button,
+.hotkey-clear-button {
   border: 0;
-  border-radius: 5px;
   background: transparent;
-  color: #a44;
+  color: #2d7a3f;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  transition: background 140ms ease;
-  flex: none;
 }
 
-.remove-key-btn:hover {
-  background: rgba(200, 60, 60, 0.12);
+.hotkey-text-button:hover,
+.hotkey-clear-button:hover {
+  color: #17633b;
+  text-decoration: underline;
+}
+
+.hotkey-clear-button {
+  padding: 3px 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2060,6 +2039,20 @@ body.compact.refreshing .metric-side strong {
 }
 :root[data-theme="dark"] .setting-checkbox-row input[type="checkbox"] {
   accent-color: #2a9c57;
+}
+
+:root[data-theme="dark"] .hotkey-section {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .hotkey-row {
+  color: #c5d3cb;
+}
+
+:root[data-theme="dark"] .hotkey-input {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8ee;
 }
 
 /* ── Adaptive Layout when Codex is disabled ── */

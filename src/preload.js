@@ -14,6 +14,16 @@ contextBridge.exposeInMainWorld("aiQuota", {
   saveTrayIcon: (dataUrl) => ipcRenderer.send("tray:saveIcon", dataUrl),
   readSettings: () => ipcRenderer.invoke("settings:read"),
   saveSettings: (config) => ipcRenderer.invoke("settings:update", config),
+  onCompactChanged: (callback) => {
+    const listener = (_event, compact) => callback(Boolean(compact));
+    ipcRenderer.on("window:compactChanged", listener);
+    return () => ipcRenderer.off("window:compactChanged", listener);
+  },
+  onPinnedChanged: (callback) => {
+    const listener = (_event, pinned) => callback(Boolean(pinned));
+    ipcRenderer.on("window:pinnedChanged", listener);
+    return () => ipcRenderer.off("window:pinnedChanged", listener);
+  },
   onUpdated: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
     ipcRenderer.on("quota:updated", listener);

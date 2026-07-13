@@ -240,7 +240,7 @@
     </section>
     <section id="settingsPanel" class="settings-panel" aria-hidden="true">
       <div class="settings-backdrop"></div>
-      <div class="settings-card" role="dialog" aria-label="设置">
+      <div class="settings-card" role="dialog" aria-modal="true" aria-label="设置">
         <header class="settings-head">
           <strong>设置</strong>
           <button id="settingsClose" class="icon-button" title="关闭" aria-label="关闭设置">
@@ -278,6 +278,41 @@
               <input type="checkbox" id="cfgAntigravity" />
               <span id="labelAntigravity">Antigravity 会话估算</span>
             </label>
+          </div>
+          <div class="setting-section hotkey-section">
+            <div class="hotkey-section-head">
+              <strong class="setting-section-title" id="hotkeySectionTitle">快捷键</strong>
+              <button id="hotkeyRestoreDefaults" class="hotkey-text-button" type="button">恢复默认</button>
+            </div>
+            <p id="hotkeyHint" class="hotkey-hint">点击输入框后按下组合键；留空可关闭对应快捷键。</p>
+            <div class="hotkey-row">
+              <span id="hotkeyTogglePanelLabel">显示 / 隐藏主面板</span>
+              <span class="hotkey-control">
+                <input id="hotkeyTogglePanel" class="hotkey-input" type="text" readonly placeholder="未设置" aria-label="显示或隐藏主面板快捷键" />
+                <button id="hotkeyTogglePanelClear" class="hotkey-clear-button" type="button" aria-label="清除快捷键">清除</button>
+              </span>
+            </div>
+            <div class="hotkey-row">
+              <span id="hotkeyToggleCompactLabel">切换紧凑模式</span>
+              <span class="hotkey-control">
+                <input id="hotkeyToggleCompact" class="hotkey-input" type="text" readonly placeholder="未设置" aria-label="切换紧凑模式快捷键" />
+                <button id="hotkeyToggleCompactClear" class="hotkey-clear-button" type="button" aria-label="清除快捷键">清除</button>
+              </span>
+            </div>
+            <div class="hotkey-row">
+              <span id="hotkeyRefreshLabel">刷新数据</span>
+              <span class="hotkey-control">
+                <input id="hotkeyRefresh" class="hotkey-input" type="text" readonly placeholder="未设置" aria-label="刷新数据快捷键" />
+                <button id="hotkeyRefreshClear" class="hotkey-clear-button" type="button" aria-label="清除快捷键">清除</button>
+              </span>
+            </div>
+            <div class="hotkey-row">
+              <span id="hotkeyTogglePinLabel">切换置顶</span>
+              <span class="hotkey-control">
+                <input id="hotkeyTogglePin" class="hotkey-input" type="text" readonly placeholder="未设置" aria-label="切换置顶快捷键" />
+                <button id="hotkeyTogglePinClear" class="hotkey-clear-button" type="button" aria-label="清除快捷键">清除</button>
+              </span>
+            </div>
           </div>
         </div>
         <footer class="settings-foot">

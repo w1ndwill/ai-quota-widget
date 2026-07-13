@@ -1,11 +1,12 @@
 "use strict";
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, globalShortcut } = require("electron");
 const { Worker } = require("node:worker_threads");
 const path = require("node:path");
 const fs = require("node:fs");
 const { CodexService } = require("./codex-service");
 const { readResetCredits } = require("./reset-credits-service");
+const { DEFAULT_HOTKEYS, normalizeHotkeys, findDuplicateHotkey } = require("./hotkey-config");
 
 // This lightweight dashboard has no WebGL/video workload. Software compositing avoids
 // keeping a large GPU helper process resident while it waits in the tray.
@@ -43,7 +44,8 @@ const COMPACT_SIZE = { width: 360, height: 76 };
 let appConfig = {
   enableCodex: true,
   enableClaudeCode: true,
-  enableAntigravity: true
+  enableAntigravity: true,
+  hotkeys: { ...DEFAULT_HOTKEYS }
 };
 
 const configPath = path.join(userDataPath, "config.json");
@@ -54,11 +56,73 @@ try {
 } catch (e) {
   console.error("Failed to load app config", e);
 }
+appConfig.hotkeys = normalizeHotkeys(appConfig.hotkeys);
 
 const codex = new CodexService();
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let isCompact = false;
+let registeredHotkeys = {};
+
+function toggleMainPanel() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+    return;
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function toggleAlwaysOnTop() {
+  if (!mainWindow) return false;
+  const pinned = !mainWindow.isAlwaysOnTop();
+  mainWindow.setAlwaysOnTop(pinned);
+  mainWindow.webContents.send("window:pinnedChanged", pinned);
+  return pinned;
+}
+
+function hotkeyRegistrations(hotkeys) {
+  return [
+    [hotkeys.togglePanel, toggleMainPanel],
+    [hotkeys.toggleCompact, () => resizeWindow(!isCompact)],
+    [hotkeys.refresh, () => refreshAndPush().catch(() => {})],
+    [hotkeys.togglePin, toggleAlwaysOnTop]
+  ].filter(([accelerator]) => accelerator);
+}
+
+function registerGlobalShortcuts(rawHotkeys) {
+  const hotkeys = normalizeHotkeys(rawHotkeys);
+  const duplicate = findDuplicateHotkey(hotkeys);
+  if (duplicate) return { ok: false, code: "duplicate", accelerator: duplicate };
+  if (JSON.stringify(hotkeys) === JSON.stringify(registeredHotkeys)) {
+    return { ok: true, hotkeys };
+  }
+
+  const previousHotkeys = registeredHotkeys;
+  const registrations = hotkeyRegistrations(hotkeys);
+
+  globalShortcut.unregisterAll();
+  for (const [accelerator, handler] of registrations) {
+    try {
+      if (globalShortcut.register(accelerator, handler)) continue;
+    } catch {}
+    globalShortcut.unregisterAll();
+    for (const [previous, previousHandler] of hotkeyRegistrations(previousHotkeys)) {
+      try { globalShortcut.register(previous, previousHandler); } catch {}
+    }
+    return { ok: false, code: "unavailable", accelerator };
+  }
+  registeredHotkeys = hotkeys;
+  return { ok: true, hotkeys };
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -95,8 +159,10 @@ function createTray() {
   tray.setToolTip("AI 额度");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "显示", click: () => mainWindow?.show() },
-      { label: "刷新", click: () => refreshAndPush() },
+      { label: "显示 / 隐藏", click: toggleMainPanel },
+      { label: "切换紧凑模式", click: () => resizeWindow(!isCompact) },
+      { label: "切换置顶", click: toggleAlwaysOnTop },
+      { label: "刷新数据", click: () => refreshAndPush().catch(() => {}) },
       { type: "separator" },
       {
         label: "退出",
@@ -110,14 +176,7 @@ function createTray() {
 
   // Toggle show/hide when tray icon is clicked
   tray.on("click", () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }
+    toggleMainPanel();
   });
 }
 
@@ -370,20 +429,15 @@ function resizeWindow(compact) {
   const bounds = mainWindow.getBounds();
   mainWindow.setBounds({ x: bounds.x, y: bounds.y, width: size.width, height: size.height }, false);
   mainWindow.setContentSize(size.width, size.height);
-  return Boolean(compact);
+  isCompact = Boolean(compact);
+  mainWindow.webContents.send("window:compactChanged", isCompact);
+  return isCompact;
 }
 
 app.whenReady().then(() => {
   ipcMain.handle("quota:read", readSnapshotOnce);
   ipcMain.handle("quota:refresh", refreshAndPush);
-  ipcMain.handle("window:toggleAlwaysOnTop", () => {
-    if (!mainWindow) {
-      return false;
-    }
-    const next = !mainWindow.isAlwaysOnTop();
-    mainWindow.setAlwaysOnTop(next);
-    return next;
-  });
+  ipcMain.handle("window:toggleAlwaysOnTop", toggleAlwaysOnTop);
   ipcMain.handle("window:quit", () => {
     mainWindow?.hide();
     return true;
@@ -416,16 +470,30 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("settings:read", () => appConfig);
   ipcMain.handle("settings:update", (_event, newConfig) => {
-    appConfig = { ...appConfig, ...newConfig };
-    clearUsageCaches();
+    const previousConfig = appConfig;
+    const nextConfig = { ...appConfig, ...newConfig, hotkeys: normalizeHotkeys(newConfig?.hotkeys ?? appConfig.hotkeys) };
+    const shortcutResult = registerGlobalShortcuts(nextConfig.hotkeys);
+    if (!shortcutResult.ok) return shortcutResult;
+    const persistedConfig = { ...nextConfig, hotkeys: shortcutResult.hotkeys };
     try {
-      fs.writeFileSync(configPath, JSON.stringify(appConfig, null, 2), "utf8");
-    } catch {}
+      fs.mkdirSync(userDataPath, { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify(persistedConfig, null, 2), "utf8");
+    } catch (error) {
+      registerGlobalShortcuts(previousConfig.hotkeys);
+      return { ok: false, code: "writeFailed", error: error?.message || String(error) };
+    }
+
+    const sourcesChanged = ["enableCodex", "enableClaudeCode", "enableAntigravity"]
+      .some((key) => previousConfig[key] !== persistedConfig[key]);
+    appConfig = persistedConfig;
     if (!appConfig.enableCodex) {
       codex.dispose();
     }
-    refreshAndPush();
-    return true;
+    if (sourcesChanged) {
+      clearUsageCaches();
+      refreshAndPush().catch(() => {});
+    }
+    return { ok: true, hotkeys: appConfig.hotkeys };
   });
   ipcMain.on("tray:saveIcon", (_event, dataUrl) => {
     try {
@@ -456,10 +524,12 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+  registerGlobalShortcuts(appConfig.hotkeys);
 });
 
 app.on("before-quit", () => {
   isQuitting = true;
+  globalShortcut.unregisterAll();
   codex.dispose();
   if (usageWorker) {
     usageWorker.terminate();

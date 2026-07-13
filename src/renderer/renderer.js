@@ -73,6 +73,12 @@ let selectedModel = "all";
 let tokenRenderGeneration = 0;
 const chartSeries = new Map();
 const HISTORY_VERSION = "2";
+const DEFAULT_HOTKEYS = Object.freeze({
+  togglePanel: "Ctrl+Shift+Space",
+  toggleCompact: "Ctrl+Shift+M",
+  refresh: "",
+  togglePin: ""
+});
 let history = readHistory();
 let mergedModels = [];
 let latestResetCredits = [];
@@ -116,8 +122,7 @@ elements.resetDialogClose.addEventListener("click", closeResetDialog);
 elements.resetDialog.querySelector(".reset-dialog-backdrop").addEventListener("click", closeResetDialog);
 elements.pinButton.addEventListener("click", async () => {
   const pinned = await window.aiQuota.toggleAlwaysOnTop();
-  elements.pinButton.classList.toggle("active", pinned);
-  elements.pinButton.title = pinned ? "取消置顶" : "置顶";
+  applyPinnedState(pinned);
 });
 setupSettings();
 setupModelSelect();
@@ -144,6 +149,8 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.aiQuota.onUpdated(render);
+window.aiQuota.onCompactChanged((compact) => applyCompactState(compact));
+window.aiQuota.onPinnedChanged((pinned) => applyPinnedState(pinned));
 renderBar(elements.shortBar, 0, "gray");
 renderBar(elements.longBar, 0, "gray");
 setCompact(isCompact);
@@ -152,7 +159,14 @@ generateAndSaveTrayIcon();
 refresh();
 // 历史图会同步扫描大量本地日志，延迟到额度首屏已经发起请求后再读取。
 setTimeout(() => scheduleHistoryRender(true), 800);
-setInterval(refresh, 5 * 60_000);
+setInterval(() => {
+  if (!document.hidden) refresh();
+}, 5 * 60_000);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (!lastSnapshot?.updatedAt || Date.now() - lastSnapshot.updatedAt > 60_000) refresh();
+  scheduleHistoryRender(true);
+});
 
 async function setupSettings() {
   const panel = document.getElementById("settingsPanel");
@@ -161,8 +175,16 @@ async function setupSettings() {
   const cfgCodex = document.getElementById("cfgCodex");
   const cfgClaudeCode = document.getElementById("cfgClaudeCode");
   const cfgAntigravity = document.getElementById("cfgAntigravity");
+  const settingsStatus = document.getElementById("settingsStatus");
+  const settingsSave = document.getElementById("settingsSave");
+  const hotkeyInputs = {
+    togglePanel: document.getElementById("hotkeyTogglePanel"),
+    toggleCompact: document.getElementById("hotkeyToggleCompact"),
+    refresh: document.getElementById("hotkeyRefresh"),
+    togglePin: document.getElementById("hotkeyTogglePin")
+  };
 
-  let config = { enableCodex: true, enableClaudeCode: true, enableAntigravity: true };
+  let config = { enableCodex: true, enableClaudeCode: true, enableAntigravity: true, hotkeys: { ...DEFAULT_HOTKEYS } };
   try {
     const mainConfig = await window.aiQuota.readSettings();
     if (mainConfig) {
@@ -180,6 +202,64 @@ async function setupSettings() {
   applyTheme(themeSelect.value);
   applyLang(langSelect.value);
 
+  const normalizeHotkeys = (hotkeys) => {
+    const source = hotkeys && typeof hotkeys === "object" ? hotkeys : {};
+    const value = (key) => source[key] === "" ? "" : (typeof source[key] === "string" ? source[key] : DEFAULT_HOTKEYS[key]);
+    return Object.fromEntries(Object.keys(DEFAULT_HOTKEYS).map((key) => [key, value(key)]));
+  };
+  const setHotkeyValues = (hotkeys) => {
+    const values = normalizeHotkeys(hotkeys);
+    for (const [key, input] of Object.entries(hotkeyInputs)) input.value = values[key];
+  };
+  const showSettingsStatus = (message = "", type = "") => {
+    settingsStatus.textContent = message;
+    settingsStatus.className = `settings-status${type ? ` ${type}` : ""}`;
+  };
+  const acceleratorFromEvent = (event) => {
+    if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return null;
+    const keys = {
+      " ": "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+      Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Delete: "Delete"
+    };
+    const key = keys[event.key] || (event.key.length === 1 ? event.key.toUpperCase() : event.key);
+    const modifiers = [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super"].filter(Boolean);
+    return modifiers.length && key ? [...modifiers, key].join("+") : null;
+  };
+
+  setHotkeyValues(config.hotkeys);
+  for (const input of Object.values(hotkeyInputs)) {
+    input.addEventListener("focus", () => input.select());
+    input.addEventListener("keydown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        input.value = "";
+        input.blur();
+        showSettingsStatus();
+        return;
+      }
+      const accelerator = acceleratorFromEvent(event);
+      if (!accelerator) {
+        showSettingsStatus(t("hotkeyModifierRequired"), "fail");
+        return;
+      }
+      input.value = accelerator;
+      showSettingsStatus();
+    });
+  }
+  const clearHotkey = (key) => {
+    hotkeyInputs[key].value = "";
+    showSettingsStatus();
+  };
+  document.getElementById("hotkeyTogglePanelClear").addEventListener("click", () => clearHotkey("togglePanel"));
+  document.getElementById("hotkeyToggleCompactClear").addEventListener("click", () => clearHotkey("toggleCompact"));
+  document.getElementById("hotkeyRefreshClear").addEventListener("click", () => clearHotkey("refresh"));
+  document.getElementById("hotkeyTogglePinClear").addEventListener("click", () => clearHotkey("togglePin"));
+  document.getElementById("hotkeyRestoreDefaults").addEventListener("click", () => {
+    setHotkeyValues(DEFAULT_HOTKEYS);
+    showSettingsStatus();
+  });
+
   // Open settings
   document.getElementById("settingsButton").addEventListener("click", () => {
     langSelect.value = localStorage.getItem("lang") || "zh";
@@ -187,48 +267,68 @@ async function setupSettings() {
     cfgCodex.checked = config.enableCodex;
     cfgClaudeCode.checked = config.enableClaudeCode;
     cfgAntigravity.checked = config.enableAntigravity;
+    setHotkeyValues(config.hotkeys);
+    showSettingsStatus();
 
     panel.classList.add("open");
     panel.setAttribute("aria-hidden", "false");
+    document.getElementById("settingsClose").focus();
   });
 
   // Close
   function closeSettings() {
     panel.classList.remove("open");
     panel.setAttribute("aria-hidden", "true");
+    document.getElementById("settingsButton").focus();
   }
   document.getElementById("settingsClose").addEventListener("click", closeSettings);
   panel.querySelector(".settings-backdrop").addEventListener("click", closeSettings);
 
   // Save
-  document.getElementById("settingsSave").addEventListener("click", async () => {
+  settingsSave.addEventListener("click", async () => {
     const lang = langSelect.value;
     const theme = themeSelect.value;
-
-    localStorage.setItem("lang", lang);
-    localStorage.setItem("theme", theme);
-
-    applyTheme(theme);
-    applyLang(lang);
 
     const newConfig = {
       enableCodex: cfgCodex.checked,
       enableClaudeCode: cfgClaudeCode.checked,
-      enableAntigravity: cfgAntigravity.checked
+      enableAntigravity: cfgAntigravity.checked,
+      hotkeys: {
+        togglePanel: hotkeyInputs.togglePanel.value.trim(),
+        toggleCompact: hotkeyInputs.toggleCompact.value.trim(),
+        refresh: hotkeyInputs.refresh.value.trim(),
+        togglePin: hotkeyInputs.togglePin.value.trim()
+      }
     };
 
-    config = { ...config, ...newConfig };
-    applyConfigEffects(config);
-    document.body.classList.toggle("no-codex", !config.enableCodex);
-
+    settingsSave.disabled = true;
+    showSettingsStatus(t("settingsSaving"), "checking");
     try {
-      await window.aiQuota.saveSettings(newConfig);
+      const result = await window.aiQuota.saveSettings(newConfig);
+      if (!result?.ok) {
+        const message = result?.code === "duplicate" ? t("hotkeyDuplicate")
+          : result?.code === "writeFailed" ? t("settingsWriteFailed")
+            : t("hotkeyUnavailable", result?.accelerator || "");
+        showSettingsStatus(message, "fail");
+        return;
+      }
+      config = { ...config, ...newConfig, hotkeys: result.hotkeys };
+      localStorage.setItem("lang", lang);
+      localStorage.setItem("theme", theme);
+      applyTheme(theme);
+      applyLang(lang);
+      setHotkeyValues(config.hotkeys);
+      applyConfigEffects(config);
+      document.body.classList.toggle("no-codex", !config.enableCodex);
     } catch (e) {
       console.error(e);
+      showSettingsStatus(t("hotkeySaveFailed"), "fail");
+      return;
+    } finally {
+      settingsSave.disabled = false;
     }
 
     closeSettings();
-    refresh();
   });
 
   window.addEventListener("keydown", (e) => {
@@ -272,6 +372,21 @@ const I18N = {
     labelCodex: "OpenAI Codex 额度与日志",
     labelClaudeCode: "Claude Code 本地日志",
     labelAntigravity: "Antigravity 会话估算",
+    hotkeySectionTitle: "快捷键",
+    hotkeyHint: "点击输入框后按下组合键；留空可关闭对应快捷键。",
+    hotkeyTogglePanel: "显示 / 隐藏主面板",
+    hotkeyToggleCompact: "切换紧凑模式",
+    hotkeyRefresh: "刷新数据",
+    hotkeyTogglePin: "切换置顶",
+    hotkeyClear: "清除",
+    hotkeyRestoreDefaults: "恢复默认",
+    hotkeyUnset: "未设置",
+    hotkeyModifierRequired: "请至少按住一个修饰键。",
+    hotkeyDuplicate: "不同操作不能使用同一组合键。",
+    hotkeyUnavailable: (key) => `${key || "该组合键"}已被其他程序占用或无效。`,
+    hotkeySaveFailed: "快捷键保存失败。",
+    settingsSaving: "正在保存…",
+    settingsWriteFailed: "配置文件写入失败，请检查目录权限。",
     noData: "无数据",
     uncomputable: "无法分析",
     waitingData: "等待数据",
@@ -342,6 +457,21 @@ const I18N = {
     labelCodex: "OpenAI Codex Quota & Logs",
     labelClaudeCode: "Claude Code Local Logs",
     labelAntigravity: "Antigravity Session Estimates",
+    hotkeySectionTitle: "Shortcuts",
+    hotkeyHint: "Click an input, then press a key combination. Leave it empty to disable that shortcut.",
+    hotkeyTogglePanel: "Show / hide main panel",
+    hotkeyToggleCompact: "Toggle compact mode",
+    hotkeyRefresh: "Refresh data",
+    hotkeyTogglePin: "Toggle always on top",
+    hotkeyClear: "Clear",
+    hotkeyRestoreDefaults: "Restore defaults",
+    hotkeyUnset: "Not set",
+    hotkeyModifierRequired: "Use at least one modifier key.",
+    hotkeyDuplicate: "Different actions cannot use the same key combination.",
+    hotkeyUnavailable: (key) => `${key || "This shortcut"} is unavailable or already used by another application.`,
+    hotkeySaveFailed: "Failed to save shortcuts.",
+    settingsSaving: "Saving…",
+    settingsWriteFailed: "Failed to write the configuration file. Check the folder permissions.",
     noData: "No data",
     uncomputable: "N/A",
     waitingData: "Waiting",
@@ -385,6 +515,7 @@ const I18N = {
   }
 };
 let i18n = I18N.zh;
+applyPinnedState(true);
 
 function t(key, ...args) {
   let val = i18n[key];
@@ -415,9 +546,21 @@ function applyLang(lang) {
     set("labelCodex", "labelCodex");
     set("labelClaudeCode", "labelClaudeCode");
     set("labelAntigravity", "labelAntigravity");
+    set("hotkeySectionTitle", "hotkeySectionTitle");
+    set("hotkeyHint", "hotkeyHint");
+    set("hotkeyTogglePanelLabel", "hotkeyTogglePanel");
+    set("hotkeyToggleCompactLabel", "hotkeyToggleCompact");
+    set("hotkeyRefreshLabel", "hotkeyRefresh");
+    set("hotkeyTogglePinLabel", "hotkeyTogglePin");
+    set("hotkeyTogglePanelClear", "hotkeyClear");
+    set("hotkeyToggleCompactClear", "hotkeyClear");
+    set("hotkeyRefreshClear", "hotkeyClear");
+    set("hotkeyTogglePinClear", "hotkeyClear");
+    set("hotkeyRestoreDefaults", "hotkeyRestoreDefaults");
+    document.querySelectorAll(".hotkey-input").forEach((input) => { input.placeholder = t("hotkeyUnset"); });
     attr("refreshButton", "refreshTip");
-    attr("pinButton", "pinTip");
-    attr("compactButton", "compactTip");
+    applyPinnedState(elements.pinButton.classList.contains("active"));
+    applyCompactState(isCompact);
     attr("closeButton", "closeTip");
     if (lastSnapshot) render(lastSnapshot);
   } catch(e) { /* don't crash on i18n */ }
@@ -451,18 +594,29 @@ function applyConfigEffects(config) {
 }
 
 async function setCompact(compact) {
+  applyCompactState(compact);
+  await window.aiQuota.setCompact(compact);
+}
+
+function applyCompactState(compact) {
   clearCardFocus();
-  isCompact = compact;
-  localStorage.setItem("compact", compact ? "1" : "0");
-  document.body.classList.toggle("compact", compact);
-  elements.compactButton.title = compact ? "展开完整视图" : "切换为紧凑视图";
-  elements.compactButton.setAttribute("aria-label", compact ? "展开完整视图" : "切换为紧凑视图");
-  elements.compactButton.setAttribute("aria-pressed", String(compact));
+  isCompact = Boolean(compact);
+  localStorage.setItem("compact", isCompact ? "1" : "0");
+  document.body.classList.toggle("compact", isCompact);
+  elements.compactButton.title = isCompact ? t("expandTip") : t("compactTip");
+  elements.compactButton.setAttribute("aria-label", isCompact ? "展开完整视图" : "切换为紧凑视图");
+  elements.compactButton.setAttribute("aria-pressed", String(isCompact));
   elements.compactIcon.setAttribute(
     "d",
-    compact ? "M9 3H3v6M15 3h6v6M21 15v6h-6M3 15v6h6" : "M7 8h10v8H7z"
+    isCompact ? "M9 3H3v6M15 3h6v6M21 15v6h-6M3 15v6h6" : "M7 8h10v8H7z"
   );
-  await window.aiQuota.setCompact(compact);
+}
+
+function applyPinnedState(pinned) {
+  elements.pinButton.classList.toggle("active", Boolean(pinned));
+  elements.pinButton.title = pinned ? t("unpinTip") : t("pinTip");
+  elements.pinButton.setAttribute("aria-label", elements.pinButton.title);
+  elements.pinButton.setAttribute("aria-pressed", String(Boolean(pinned)));
 }
 
 
@@ -1118,6 +1272,7 @@ function recordHistory(quota) {
 }
 
 function scheduleHistoryRender(immediate = false) {
+  if (document.hidden) return;
   if (historyRenderInFlight) {
     historyRenderQueued = true;
     historyRenderQueuedImmediate ||= immediate;
@@ -1131,6 +1286,7 @@ function scheduleHistoryRender(immediate = false) {
   }
   historyRenderTimer = setTimeout(async () => {
     historyRenderTimer = null;
+    if (document.hidden) return;
     historyRenderInFlight = true;
     try {
       await renderHistory();

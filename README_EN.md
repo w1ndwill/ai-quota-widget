@@ -50,6 +50,7 @@ Compact mode keeps only the quota summary for a long-running, always-on-top desk
   - **Antigravity estimation**: Parses local Antigravity sessions and estimates context accumulation using a baseline offset and `CHARS_PER_TOKEN = 2.8`.
 - **Cache-hit analysis**: Shows 24-hour and cumulative cache-hit rates where the provider exposes cache metrics. Antigravity-only selections correctly show “Unavailable” instead of a misleading `0%`.
 - **Model source hierarchy**: Dynamically sizes the selector to the longest visible label, supports source-level aggregation and collapsible source groups, and avoids a horizontal scrollbar.
+- **Configurable global shortcuts**: Record shortcuts for showing or hiding the main panel, compact mode, refresh, and always-on-top. Defaults are `Ctrl+Shift+Space` and `Ctrl+Shift+M` for the first two actions; conflicts are detected before saving.
 - **High-performance incremental scanning**: Uses a persistent metadata index and a 15-second disk-I/O cache to avoid re-reading unchanged logs during frequent refreshes.
 
 ## Local development
