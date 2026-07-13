@@ -1,22 +1,20 @@
 "use strict";
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require("electron");
+const { Worker } = require("node:worker_threads");
 const path = require("node:path");
 const fs = require("node:fs");
 const { CodexService } = require("./codex-service");
 const { readResetCredits } = require("./reset-credits-service");
-const { readLocalTokenUsage, readTokenHistory } = require("./token-usage-service");
-const { readLocalTokenUsage: readAntigravityUsage, readTokenHistory: readAntigravityHistory } = require("./antigravity-token-service");
 
 // This lightweight dashboard has no WebGL/video workload. Software compositing avoids
 // keeping a large GPU helper process resident while it waits in the tray.
 app.disableHardwareAcceleration();
 
-// Extreme memory optimizations: disable unneeded features and constrain V8 garbage collection
+// These features are not used by the dashboard and can keep background helpers resident.
 app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
 app.commandLine.appendSwitch("disable-speech-api");
 app.commandLine.appendSwitch("disable-webrtc");
-app.commandLine.appendSwitch("js-flags", "--expose-gc --max-semi-space-size=1 --max-old-space-size=32");
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -136,18 +134,12 @@ const HISTORY_CACHE_TTL = 60_000;
 const CUMULATIVE_CACHE_TTL = 5 * 60_000;
 const historyCache = new Map();
 const cumulativeCache = new Map();
-
-function getCachedValue(cache, key, ttl, reader) {
-  const now = Date.now();
-  const cached = cache.get(key);
-  if (cached && now - cached.at < ttl) {
-    return cached.value;
-  }
-
-  const value = reader();
-  cache.set(key, { at: now, value });
-  return value;
-}
+const historyPending = new Map();
+const cumulativePending = new Map();
+let snapshotInFlight = null;
+let usageWorker = null;
+let usageWorkerNextId = 1;
+const usageWorkerPending = new Map();
 
 function clearUsageCaches() {
   cachedLocalUsage = null;
@@ -158,31 +150,109 @@ function clearUsageCaches() {
   cumulativeCache.clear();
 }
 
-function readCachedHistory(source, model) {
-  const key = `${source}:${model}`;
-  const reader = source === "antigravity"
-    ? () => readAntigravityHistory({ model, days: 45 })
-    : () => readTokenHistory({ model, days: 45 });
-  return getCachedValue(historyCache, key, HISTORY_CACHE_TTL, reader);
+function getUsageWorker() {
+  if (usageWorker) return usageWorker;
+
+  const worker = new Worker(path.join(__dirname, "usage-worker.js"));
+  worker.unref();
+  worker.on("message", ({ id, result, error }) => {
+    const pending = usageWorkerPending.get(id);
+    if (!pending) return;
+    usageWorkerPending.delete(id);
+    if (error) pending.reject(new Error(error));
+    else pending.resolve(result);
+  });
+  worker.on("error", (error) => {
+    if (usageWorker === worker) resetUsageWorker(error);
+  });
+  worker.on("exit", (code) => {
+    if (usageWorker === worker) {
+      resetUsageWorker(new Error(`Usage worker exited with code ${code}`));
+    }
+  });
+  usageWorker = worker;
+  return worker;
 }
 
-function readCachedCumulativeTokens(model) {
-  return getCachedValue(cumulativeCache, model, CUMULATIVE_CACHE_TTL, () => {
-    const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
-    const addHistory = (history) => {
-      for (const value of Object.values(history.daily)) {
-        sum.input += value.input || 0;
-        sum.cached += value.cached || 0;
-        sum.output += value.output || 0;
-        sum.reasoning += value.reasoning || 0;
-        sum.total += value.total || 0;
-      }
-    };
+function resetUsageWorker(error) {
+  usageWorker = null;
+  for (const pending of usageWorkerPending.values()) {
+    pending.reject(error);
+  }
+  usageWorkerPending.clear();
+}
 
-    if (appConfig.enableClaudeCode) addHistory(readTokenHistory({ model, days: 9999 }));
-    if (appConfig.enableAntigravity) addHistory(readAntigravityHistory({ model, days: 9999 }));
-    return sum;
+function readUsageInWorker(operation, payload) {
+  const worker = getUsageWorker();
+  const id = usageWorkerNextId++;
+  return new Promise((resolve, reject) => {
+    usageWorkerPending.set(id, { resolve, reject });
+    worker.postMessage({ id, operation, payload });
   });
+}
+
+async function readCachedLocalUsage(now) {
+  if (cachedLocalUsage && now - lastLocalUsageTime < CACHE_TTL) {
+    return cachedLocalUsage;
+  }
+  cachedLocalUsage = await readUsageInWorker("codexUsage");
+  lastLocalUsageTime = Date.now();
+  return cachedLocalUsage;
+}
+
+async function readCachedAntigravityUsage(now) {
+  if (cachedAntigravityUsage && now - lastAntigravityUsageTime < CACHE_TTL) {
+    return cachedAntigravityUsage;
+  }
+  cachedAntigravityUsage = await readUsageInWorker("antigravityUsage");
+  lastAntigravityUsageTime = Date.now();
+  return cachedAntigravityUsage;
+}
+
+async function readCachedHistory(source, model) {
+  const key = `${source}:${model}`;
+  const cached = historyCache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.at < HISTORY_CACHE_TTL) {
+    return cached.value;
+  }
+
+  const pending = historyPending.get(key);
+  if (pending) return pending;
+
+  const operation = source === "antigravity" ? "antigravityHistory" : "codexHistory";
+  const promise = readUsageInWorker(operation, { model, days: 45 })
+    .then((value) => {
+      historyCache.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => historyPending.delete(key));
+  historyPending.set(key, promise);
+  return promise;
+}
+
+async function readCachedCumulativeTokens(model) {
+  const cached = cumulativeCache.get(model);
+  const now = Date.now();
+  if (cached && now - cached.at < CUMULATIVE_CACHE_TTL) {
+    return cached.value;
+  }
+
+  const pending = cumulativePending.get(model);
+  if (pending) return pending;
+
+  const promise = readUsageInWorker("cumulative", {
+    model,
+    enableClaudeCode: appConfig.enableClaudeCode,
+    enableAntigravity: appConfig.enableAntigravity
+  })
+    .then((value) => {
+      cumulativeCache.set(model, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => cumulativePending.delete(model));
+  cumulativePending.set(model, promise);
+  return promise;
 }
 
 async function readCachedResetCredits() {
@@ -226,46 +296,31 @@ async function readSnapshot() {
     }
   }
 
-  // Handle Antigravity Usage with 15s cache
-  if (appConfig.enableAntigravity) {
-    try {
-      if (cachedAntigravityUsage && (now - lastAntigravityUsageTime < CACHE_TTL)) {
-        antigravityTokenUsage = cachedAntigravityUsage;
-      } else {
-        antigravityTokenUsage = readAntigravityUsage();
-        cachedAntigravityUsage = antigravityTokenUsage;
-        lastAntigravityUsageTime = now;
-      }
-    } catch (error) {
-      errors.push(error.message);
-    }
+  // Parse local logs in a worker so a large transcript cannot block Electron's main loop.
+  const [antigravityResult, localResult] = await Promise.allSettled([
+    appConfig.enableAntigravity ? readCachedAntigravityUsage(now) : Promise.resolve(null),
+    appConfig.enableClaudeCode ? readCachedLocalUsage(now) : Promise.resolve(null)
+  ]);
+  if (antigravityResult.status === "fulfilled") {
+    antigravityTokenUsage = antigravityResult.value;
+  } else {
+    errors.push(antigravityResult.reason.message);
   }
-
-  // Handle Local Token Usage with 15s cache
-  if (appConfig.enableClaudeCode) {
-    try {
-      if (cachedLocalUsage && (now - lastLocalUsageTime < CACHE_TTL)) {
-        localTokenUsage = cachedLocalUsage;
-      } else {
-        localTokenUsage = readLocalTokenUsage();
-        cachedLocalUsage = localTokenUsage;
-        lastLocalUsageTime = now;
-      }
-
-      if (quota?.tokenStats && quota.tokenStats.total == null && localTokenUsage?.total != null) {
-        quota = {
-          ...quota,
-          tokenStats: {
-            ...quota.tokenStats,
-            ...localTokenUsage,
-            accountUsageError: quota.tokenStats.error ?? null,
-            error: null
-          }
-        };
-      }
-    } catch (error) {
-      errors.push(error.message);
+  if (localResult.status === "fulfilled") {
+    localTokenUsage = localResult.value;
+    if (quota?.tokenStats && quota.tokenStats.total == null && localTokenUsage?.total != null) {
+      quota = {
+        ...quota,
+        tokenStats: {
+          ...quota.tokenStats,
+          ...localTokenUsage,
+          accountUsageError: quota.tokenStats.error ?? null,
+          error: null
+        }
+      };
     }
+  } else {
+    errors.push(localResult.reason.message);
   }
 
   return {
@@ -281,14 +336,18 @@ async function readSnapshot() {
   };
 }
 
-async function refreshAndPush() {
-  const snapshot = await readSnapshot();
-  mainWindow?.webContents.send("quota:updated", snapshot);
-  if (global.gc) {
-    setTimeout(() => {
-      try { global.gc(); } catch {}
-    }, 400);
+function readSnapshotOnce() {
+  if (!snapshotInFlight) {
+    snapshotInFlight = readSnapshot().finally(() => {
+      snapshotInFlight = null;
+    });
   }
+  return snapshotInFlight;
+}
+
+async function refreshAndPush() {
+  const snapshot = await readSnapshotOnce();
+  mainWindow?.webContents.send("quota:updated", snapshot);
   return snapshot;
 }
 
@@ -309,7 +368,7 @@ function resizeWindow(compact) {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle("quota:read", readSnapshot);
+  ipcMain.handle("quota:read", readSnapshotOnce);
   ipcMain.handle("quota:refresh", refreshAndPush);
   ipcMain.handle("window:toggleAlwaysOnTop", () => {
     if (!mainWindow) {
@@ -324,25 +383,25 @@ app.whenReady().then(() => {
     return true;
   });
   ipcMain.handle("window:setCompact", (_event, compact) => resizeWindow(Boolean(compact)));
-  ipcMain.handle("tokens:history", (_event, model) => {
+  ipcMain.handle("tokens:history", async (_event, model) => {
     try {
       if (!appConfig.enableClaudeCode) return { daily: {}, hourly: [] };
-      return readCachedHistory("codex", model);
+      return await readCachedHistory("codex", model);
     } catch {
       return { daily: {}, hourly: [] };
     }
   });
-  ipcMain.handle("antigravity:history", (_event, model) => {
+  ipcMain.handle("antigravity:history", async (_event, model) => {
     try {
       if (!appConfig.enableAntigravity) return { daily: {}, hourly: [] };
-      return readCachedHistory("antigravity", model);
+      return await readCachedHistory("antigravity", model);
     } catch {
       return { daily: {}, hourly: [] };
     }
   });
-  ipcMain.handle("tokens:cumulative", (_event, model) => {
+  ipcMain.handle("tokens:cumulative", async (_event, model) => {
     try {
-      return readCachedCumulativeTokens(model);
+      return await readCachedCumulativeTokens(model);
     } catch {
       return null;
     }
@@ -394,6 +453,10 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   isQuitting = true;
   codex.dispose();
+  if (usageWorker) {
+    usageWorker.terminate();
+    usageWorker = null;
+  }
 });
 
 app.on("window-all-closed", () => {

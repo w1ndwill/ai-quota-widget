@@ -67,8 +67,8 @@
                   <circle id="longRingArc" class="ring-arc ring-arc-long" cx="75" cy="75" r="48" pathLength="100" tabindex="0" role="button" aria-label="7 天额度" />
                 </svg>
                 <div class="ring-core">
-                  <span class="ring-value ring-value-short"><b id="ringShort">--%</b> 5h</span>
-                  <span class="ring-value ring-value-long"><b id="ringLong">--%</b> 7d</span>
+                  <span id="ringShortValue" class="ring-value ring-value-short"><b id="ringShort">--%</b> <span id="ringShortLabel">5h</span></span>
+                  <span id="ringLongValue" class="ring-value ring-value-long"><b id="ringLong">--%</b> <span id="ringLongLabel">7d</span></span>
                   <small>剩余</small>
                 </div>
               </div>
@@ -79,7 +79,7 @@
             </section>
 
             <section class="quota-list">
-              <article class="metric">
+              <article id="shortMetric" class="metric">
                 <div class="metric-main">
                   <div class="metric-title" id="shortLabel">5小时</div>
                   <div class="bar detail-target" data-detail-key="shortBar" tabindex="0"><span id="shortBar"></span></div>
@@ -90,7 +90,7 @@
                 </div>
               </article>
 
-              <article class="metric">
+              <article id="longMetric" class="metric">
                 <div class="metric-main">
                   <div class="metric-title" id="longLabel">周限额</div>
                   <div class="bar detail-target" data-detail-key="longBar" tabindex="0"><span id="longBar"></span></div>

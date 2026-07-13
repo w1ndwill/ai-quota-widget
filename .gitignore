@@ -10,6 +10,7 @@ release/
 release-next/
 release-candidate/
 release-widget/
+release-verify/
 *.log
 Thumbs.db
 .DS_Store

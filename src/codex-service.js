@@ -15,6 +15,10 @@ class CodexService extends EventEmitter {
     this.nextId = 1;
     this.pending = new Map();
     this.cacheFilePath = path.join(
+      process.env.AI_QUOTA_USER_DATA_PATH || path.join(process.env.USERPROFILE || process.env.HOME || "", ".ai-quota-widget"),
+      "codex_quota_cache.json"
+    );
+    this.legacyCacheFilePath = path.join(
       process.env.USERPROFILE || process.env.HOME || "",
       ".gemini",
       "antigravity",
@@ -25,12 +29,16 @@ class CodexService extends EventEmitter {
   }
 
   loadCache() {
-    try {
-      if (fs.existsSync(this.cacheFilePath)) {
-        const content = fs.readFileSync(this.cacheFilePath, "utf8");
-        return JSON.parse(content);
+    for (const filePath of [this.cacheFilePath, this.legacyCacheFilePath]) {
+      try {
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, "utf8");
+          return JSON.parse(content);
+        }
+      } catch (e) {
+        // Ignore a malformed cache and try the next location.
       }
-    } catch (e) {}
+    }
     return null;
   }
 
@@ -59,6 +67,9 @@ class CodexService extends EventEmitter {
     const usage = usageResult.value;
     const usageError = usageResult.error;
     const snapshot = normalizeCodexQuota({ ...response, accountUsage: usage, usageError });
+    if (!snapshot) {
+      throw new Error("Codex rate-limit response did not contain quota data");
+    }
 
     this.lastSnapshot = snapshot;
     this.saveCache(snapshot);
@@ -201,11 +212,16 @@ class CodexService extends EventEmitter {
     }
 
     if (message.method === "account/rateLimits/updated") {
+      const params = message.params ?? {};
       const snapshot = normalizeCodexQuota({
-        rateLimits: message.params?.rateLimits,
+        ...params,
         accountUsage: this.lastSnapshot?.accountUsage ?? null,
         usageError: this.lastSnapshot?.usageError ?? null
       });
+
+      if (!snapshot) {
+        return;
+      }
 
       this.lastSnapshot = snapshot;
       this.saveCache(snapshot);

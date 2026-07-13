@@ -43,6 +43,28 @@ test("keeps the server-reported remaining quota before a future reset", async ()
   assert.equal(snapshot.longWindow.remainingPercent, 80);
 });
 
+test("accepts rateLimitsByLimitId quota update notifications", () => {
+  const service = new CodexService();
+  service.saveCache = () => {};
+  service.handleLine(JSON.stringify({
+    method: "account/rateLimits/updated",
+    params: {
+      rateLimitsByLimitId: {
+        codex: {
+          primary: {
+            remainingPercent: 100,
+            windowDurationMins: 10080,
+            resetsAt: 1800600000
+          }
+        }
+      }
+    }
+  }));
+
+  assert.equal(service.getCachedQuota().shortWindow, null);
+  assert.equal(service.getCachedQuota().longWindow.remainingPercent, 100);
+});
+
 test("normalizes Codex rate limit windows and quota card expiry", () => {
   const snapshot = normalizeCodexQuota({
     rateLimitsByLimitId: {
@@ -98,6 +120,24 @@ test("falls back to rateLimits and derives quota card from weekly reset", () => 
   assert.equal(snapshot.quotaCard.source, "secondary");
   assert.equal(snapshot.quotaCard.remainingPercent, 65);
   assert.equal(snapshot.quotaCard.expiresAt, 1800600000000);
+});
+
+test("treats a lone weekly window as the long quota after the 5-hour limit is removed", () => {
+  const snapshot = normalizeCodexQuota({
+    rateLimits: {
+      primary: {
+        remainingPercent: 88,
+        windowDurationMins: 10080,
+        resetsAt: 1800600000
+      }
+    }
+  });
+
+  assert.equal(snapshot.shortWindow, null);
+  assert.equal(snapshot.longWindow.label, "周限额");
+  assert.equal(snapshot.longWindow.remainingPercent, 88);
+  assert.equal(snapshot.quotaCard.source, "primary");
+  assert.equal(snapshot.quotaCard.remainingPercent, 88);
 });
 
 test("normalizes token statistics from several common payload fields", () => {

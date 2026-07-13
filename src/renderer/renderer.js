@@ -13,8 +13,14 @@ const elements = {
   shortRingArc: document.getElementById("shortRingArc"),
   longRingTrack: document.getElementById("longRingTrack"),
   longRingArc: document.getElementById("longRingArc"),
+  ringShortValue: document.getElementById("ringShortValue"),
+  ringLongValue: document.getElementById("ringLongValue"),
+  ringShortLabel: document.getElementById("ringShortLabel"),
+  ringLongLabel: document.getElementById("ringLongLabel"),
   ringShort: document.getElementById("ringShort"),
   ringLong: document.getElementById("ringLong"),
+  shortMetric: document.getElementById("shortMetric"),
+  longMetric: document.getElementById("longMetric"),
   shortLabel: document.getElementById("shortLabel"),
   shortValue: document.getElementById("shortValue"),
   shortBar: document.getElementById("shortBar"),
@@ -64,11 +70,18 @@ let isRefreshing = false;
 let focusedCard = null;
 let lastSnapshot = null;
 let selectedModel = "all";
+let tokenRenderGeneration = 0;
 const chartSeries = new Map();
 const HISTORY_VERSION = "2";
 let history = readHistory();
 let mergedModels = [];
 let latestResetCredits = [];
+let historyRenderTimer = null;
+let historyRenderInFlight = false;
+let historyRenderQueued = false;
+let historyRenderQueuedImmediate = false;
+let lastHistoryRenderAt = 0;
+const HISTORY_RENDER_INTERVAL = 60_000;
 
 elements.closeButton.addEventListener("click", () => window.aiQuota.quitWindow());
 elements.compactButton.addEventListener("click", () => setCompact(!isCompact));
@@ -118,7 +131,7 @@ setupTokenRangeToggle();
 generateAndSaveTrayIcon();
 refresh();
 // 历史图会同步扫描大量本地日志，延迟到额度首屏已经发起请求后再读取。
-setTimeout(renderHistory, 800);
+setTimeout(() => scheduleHistoryRender(true), 800);
 setInterval(refresh, 5 * 60_000);
 
 async function setupSettings() {
@@ -445,23 +458,24 @@ function render(snapshot) {
     elements.updatedAt.classList.toggle("error", Boolean(snapshot?.error));
     elements.updatedAt.title = snapshot?.error ?? "";
 
-    renderWindow("short", quota?.shortWindow, "5小时");
-    renderWindow("long", quota?.longWindow, "周限额");
-    renderRing(quota);
+    const windows = getDisplayWindows(quota);
+    renderWindow(
+      "short",
+      windows.shortWindow,
+      "5小时",
+      Boolean(quota),
+      { unlimitedWhenMissing: Boolean(quota?.longWindow && !quota?.shortWindow) }
+    );
+    renderWindow("long", windows.longWindow, "周限额", Boolean(quota));
+    renderRing(windows, Boolean(quota));
     renderResetCredits(snapshot?.resetCredits, quota?.resetCard);
 
     mergedModels = buildMergedModels(snapshot);
     const tokenData = getTokenForModel(snapshot, selectedModel);
-    renderTokenStats(tokenData, mergedModels);
+    renderTokenStats(tokenData, mergedModels, ++tokenRenderGeneration);
 
     recordHistory(quota);
-    renderHistory();
-
-    // Data render finished, immediately clear image/layout cache and trigger V8 GC sweep
-    window.aiQuota.clearCache();
-    if (typeof gc === "function") {
-      try { gc(); } catch {}
-    }
+    scheduleHistoryRender();
   } catch (e) {
     elements.updatedAt.textContent = "ERR:" + (e.message || "").slice(0, 30);
     elements.updatedAt.classList.add("error");
@@ -491,6 +505,7 @@ function setupTokenRangeToggle() {
     btn.addEventListener("click", async () => {
       const range = btn.dataset.range;
       if (range === tokenRange) return;
+      const renderId = ++tokenRenderGeneration;
 
       tokenRange = range;
       localStorage.setItem("tokenRange", range);
@@ -506,12 +521,14 @@ function setupTokenRangeToggle() {
       elements.tokenCardBody.classList.add("switching");
       await new Promise((resolve) => setTimeout(resolve, 220));
 
-      if (lastSnapshot) {
+      if (lastSnapshot && renderId === tokenRenderGeneration) {
         const tokenData = getTokenForModel(lastSnapshot, selectedModel);
-        await renderTokenStats(tokenData, mergedModels);
+        await renderTokenStats(tokenData, mergedModels, renderId);
       }
 
-      elements.tokenCardBody.classList.remove("switching");
+      if (renderId === tokenRenderGeneration) {
+        elements.tokenCardBody.classList.remove("switching");
+      }
     });
   });
 }
@@ -599,9 +616,9 @@ function buildModelOption(item) {
     closeModelPicker();
     if (lastSnapshot) {
       const data = getTokenForModel(lastSnapshot, selectedModel);
-      renderTokenStats(data, mergedModels);
+      renderTokenStats(data, mergedModels, ++tokenRenderGeneration);
     }
-    renderHistory();
+    scheduleHistoryRender(true);
   });
   return option;
 }
@@ -734,25 +751,64 @@ function renderModelUsage(modelUsage) {
   }
 }
 
-function renderWindow(prefix, quotaWindow, fallbackLabel) {
-  const percent = quotaWindow?.remainingPercent;
+function renderWindow(prefix, quotaWindow, fallbackLabel, hideWhenMissing = true, options = {}) {
+  const unlimited = options.unlimitedWhenMissing && !quotaWindow;
+  const metric = elements[`${prefix}Metric`];
+  if (metric) metric.hidden = hideWhenMissing && !quotaWindow && !unlimited;
+  const percent = unlimited ? 100 : quotaWindow?.remainingPercent;
   const tone = toneForPercent(percent);
   elements[`${prefix}Label`].textContent = quotaWindow?.label || fallbackLabel;
-  elements[`${prefix}Value`].textContent = percent == null ? "--%" : `${percent}%`;
-  elements[`${prefix}Reset`].textContent = quotaWindow?.resetsAt ? formatDateTime(quotaWindow.resetsAt) : t("waitingData");
-  elements[`${prefix}ResetCompact`].textContent = quotaWindow?.resetsAt ? formatCompactDate(quotaWindow.resetsAt) : "--";
+  elements[`${prefix}Value`].textContent = unlimited ? "∞" : percent == null ? "--%" : `${percent}%`;
+  elements[`${prefix}Reset`].textContent = unlimited
+    ? "无限制"
+    : quotaWindow?.resetsAt ? formatDateTime(quotaWindow.resetsAt) : t("waitingData");
+  elements[`${prefix}ResetCompact`].textContent = unlimited
+    ? "∞"
+    : quotaWindow?.resetsAt ? formatCompactDate(quotaWindow.resetsAt) : "--";
   renderBar(elements[`${prefix}Bar`], percent, tone);
 }
 
-function renderRing(quota) {
-  const short = quota?.shortWindow?.remainingPercent;
-  const long = quota?.longWindow?.remainingPercent;
+function renderRing(windows, hasQuota) {
+  const shortWindow = windows?.ringShortWindow;
+  const longWindow = windows?.ringLongWindow;
+  const short = shortWindow?.remainingPercent;
+  const long = longWindow?.remainingPercent;
+  const hasShort = Boolean(shortWindow) || !hasQuota;
+  const hasLong = Boolean(longWindow) || !hasQuota;
+  elements.shortRingTrack.style.display = hasShort ? "" : "none";
+  elements.shortRingArc.style.display = hasShort ? "" : "none";
+  elements.longRingTrack.style.display = hasLong ? "" : "none";
+  elements.longRingArc.style.display = hasLong ? "" : "none";
+  elements.ringShortValue.hidden = !hasShort;
+  elements.ringLongValue.hidden = !hasLong;
   elements.ringShort.textContent = short == null ? "--%" : `${short}%`;
   elements.ringLong.textContent = long == null ? "--%" : `${long}%`;
+  elements.ringShortLabel.textContent = compactWindowLabel(shortWindow, "5h");
+  elements.ringLongLabel.textContent = compactWindowLabel(longWindow, "周限额");
+  elements.shortResetCompact.textContent = shortWindow?.resetsAt ? formatCompactDate(shortWindow.resetsAt) : "--";
+  elements.longResetCompact.textContent = longWindow?.resetsAt ? formatCompactDate(longWindow.resetsAt) : "--";
   elements.shortRingArc.style.strokeDasharray = `${clamp(short ?? 0)} 100`;
   elements.longRingArc.style.strokeDasharray = `${clamp(long ?? 0)} 100`;
-  elements.shortRingArc.setAttribute("aria-label", `${t("shortLabel")} ${t("remaining")} ${short ?? "--"}%`);
-  elements.longRingArc.setAttribute("aria-label", `${t("weekLabel")} ${t("remaining")} ${long ?? "--"}%`);
+  elements.shortRingArc.setAttribute("aria-label", `${elements.ringShortLabel.textContent} ${t("remaining")} ${short ?? "--"}%`);
+  elements.longRingArc.setAttribute("aria-label", `${elements.ringLongLabel.textContent} ${t("remaining")} ${long ?? "--"}%`);
+}
+
+function getDisplayWindows(quota) {
+  const shortWindow = quota?.shortWindow ?? null;
+  const longWindow = quota?.longWindow ?? null;
+  return {
+    shortWindow,
+    longWindow,
+    ringShortWindow: shortWindow ?? longWindow,
+    ringLongWindow: shortWindow ? longWindow : null
+  };
+}
+
+function compactWindowLabel(window, fallback) {
+  const minutes = window?.durationMins;
+  if (minutes === 300) return "5h";
+  if (minutes === 10080) return "7d";
+  return window?.label || fallback;
 }
 
 function renderResetCredits(resetCredits, resetCard) {
@@ -822,7 +878,8 @@ function resetStatusLabel(status) {
   return status || t("unknownStatus");
 }
 
-async function renderTokenStats(stats, modelUsage) {
+async function renderTokenStats(stats, modelUsage, renderId) {
+  if (renderId !== tokenRenderGeneration) return;
   syncModelSelect(modelUsage);
 
   let displayStats = stats;
@@ -833,6 +890,7 @@ async function renderTokenStats(stats, modelUsage) {
     const modelArg = selectedModel === "all" ? "all" : selectedModel.split(":").slice(1).join(":");
     try {
       const cumStats = await window.aiQuota.readCumulativeTokens(modelArg);
+      if (renderId !== tokenRenderGeneration) return;
       if (cumStats) {
         displayStats = {
           ...cumStats,
@@ -844,6 +902,7 @@ async function renderTokenStats(stats, modelUsage) {
       console.error(e);
     }
   } else {
+    if (renderId !== tokenRenderGeneration) return;
     const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => (item.sourceModel || item.model) === selectedModel);
     if (selectedUsage) {
       displayStats = {
@@ -931,6 +990,36 @@ function recordHistory(quota) {
   }
   history = history.slice(-288);
   localStorage.setItem("quotaHistory", JSON.stringify(history));
+}
+
+function scheduleHistoryRender(immediate = false) {
+  if (historyRenderInFlight) {
+    historyRenderQueued = true;
+    historyRenderQueuedImmediate ||= immediate;
+    return;
+  }
+
+  const delay = immediate ? 0 : Math.max(0, HISTORY_RENDER_INTERVAL - (Date.now() - lastHistoryRenderAt));
+  if (historyRenderTimer) {
+    if (!immediate) return;
+    clearTimeout(historyRenderTimer);
+  }
+  historyRenderTimer = setTimeout(async () => {
+    historyRenderTimer = null;
+    historyRenderInFlight = true;
+    try {
+      await renderHistory();
+      lastHistoryRenderAt = Date.now();
+    } finally {
+      historyRenderInFlight = false;
+      if (historyRenderQueued) {
+        const queuedImmediate = historyRenderQueuedImmediate;
+        historyRenderQueued = false;
+        historyRenderQueuedImmediate = false;
+        scheduleHistoryRender(queuedImmediate);
+      }
+    }
+  }, delay);
 }
 
 async function renderHistory() {

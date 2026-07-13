@@ -6,8 +6,9 @@ function normalizeCodexQuota(response) {
     return null;
   }
 
-  const shortWindow = normalizeWindow(snapshot.primary, "5小时");
-  const longWindow = normalizeWindow(snapshot.secondary, "周限额");
+  const windows = normalizeRateLimitWindows(snapshot);
+  const shortWindow = windows.short;
+  const longWindow = windows.long;
   const quotaCard = normalizeQuotaCard(snapshot, shortWindow, longWindow);
   const resetCard = normalizeResetCard(snapshot, quotaCard);
   const tokenStats = normalizeTokenStats(snapshot, response?.accountUsage, shortWindow, longWindow, response?.usageError);
@@ -26,32 +27,78 @@ function normalizeCodexQuota(response) {
   };
 }
 
-function normalizeWindow(window, fallbackLabel) {
+function normalizeWindow(window, fallbackLabel, sourceKey = null) {
   if (!window) {
     return null;
   }
 
-  const usedPercent = clamp(window.usedPercent);
+  const durationMins = readNumber(firstValue(
+    window.windowDurationMins,
+    window.durationMins,
+    window.durationMinutes,
+    window.window_duration_mins
+  ), null);
+  const reportedUsed = readNumber(firstValue(window.usedPercent, window.used_percent), null);
+  const reportedRemaining = readNumber(firstValue(window.remainingPercent, window.remaining_percent), null);
+  const usedPercent = reportedUsed == null
+    ? reportedRemaining == null ? null : clamp(100 - reportedRemaining)
+    : clamp(reportedUsed);
+  const remainingPercent = reportedRemaining == null
+    ? usedPercent == null ? null : clamp(100 - usedPercent)
+    : clamp(reportedRemaining);
   return {
-    label: labelForDuration(window.windowDurationMins, fallbackLabel),
+    label: labelForDuration(durationMins, fallbackLabel),
+    durationMins,
+    sourceKey,
     usedPercent,
-    remainingPercent: clamp(100 - usedPercent),
+    remainingPercent,
     resetsAt: normalizeTimestamp(window.resetsAt),
     tokenLimit: readNumber(firstValue(window.tokenLimit, window.limit, window.maxTokens), null),
     tokensUsed: readNumber(firstValue(window.tokensUsed, window.used, window.usedTokens), null)
   };
 }
 
+function normalizeRateLimitWindows(snapshot) {
+  const candidates = [
+    ["primary", normalizeWindow(snapshot.primary, "5小时", "primary")],
+    ["secondary", normalizeWindow(snapshot.secondary, "周限额", "secondary")]
+  ].filter(([, window]) => window);
+
+  if (!candidates.length) {
+    return { short: null, long: null };
+  }
+
+  const short = candidates.find(([, window]) => window.durationMins != null && window.durationMins < 24 * 60);
+  const long = candidates.find(([, window]) => window.durationMins != null && window.durationMins >= 24 * 60);
+  if (short || long) {
+    return {
+      short: short?.[1] ?? null,
+      long: long?.[1] ?? null
+    };
+  }
+
+  // Older app-server payloads did not always include a duration. Keep the
+  // historical primary/secondary interpretation for those responses.
+  return {
+    short: candidates[0]?.[1] ?? null,
+    long: candidates[1]?.[1] ?? null
+  };
+}
+
 function normalizeQuotaCard(snapshot, shortWindow, longWindow) {
   const individual = snapshot.individualLimit;
   if (individual) {
-    const remainingPercent = clamp(readNumber(individual.remainingPercent, 0));
+    const reportedRemaining = readNumber(individual.remainingPercent, null);
+    const reportedUsed = readNumber(individual.usedPercent, null);
+    const remainingPercent = reportedRemaining == null
+      ? reportedUsed == null ? null : clamp(100 - reportedUsed)
+      : clamp(reportedRemaining);
     return {
       title: snapshot.limitName ?? "Codex 额度卡",
       limit: readNumber(individual.limit, individual.limit ?? null),
       used: readNumber(individual.used, individual.used ?? null),
       remainingPercent,
-      usedPercent: clamp(100 - remainingPercent),
+      usedPercent: remainingPercent == null ? null : clamp(100 - remainingPercent),
       expiresAt: normalizeTimestamp(individual.resetsAt),
       source: "individualLimit"
     };
@@ -82,7 +129,7 @@ function normalizeQuotaCard(snapshot, shortWindow, longWindow) {
     remainingPercent: fallbackWindow.remainingPercent,
     usedPercent: fallbackWindow.usedPercent,
     expiresAt: fallbackWindow.resetsAt,
-    source: fallbackWindow === longWindow ? "secondary" : "primary"
+    source: fallbackWindow.sourceKey || (fallbackWindow === longWindow ? "secondary" : "primary")
   };
 }
 

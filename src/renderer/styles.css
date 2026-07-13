@@ -535,6 +535,10 @@ body {
   transition: transform 240ms var(--motion-spring), background 240ms ease, box-shadow 240ms ease, border-color 240ms ease;
 }
 
+.metric[hidden] {
+  display: none;
+}
+
 .metric:hover {
   transform: translateY(-2px);
   border-color: rgba(88, 200, 104, 0.28);
@@ -1985,4 +1989,3 @@ body.no-codex .dashboard {
     "tokens"
     "analysis";
 }
-
