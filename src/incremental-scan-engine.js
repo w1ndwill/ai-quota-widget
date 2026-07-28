@@ -7,6 +7,9 @@ const os = require("node:os");
 // Bump this whenever the parsed event format or parsing rules change.
 const CACHE_VERSION = 4;
 const SWEEP_INTERVAL_MS = 5 * 60_000;
+let memoryCache = null;
+let memoryCachePath = null;
+let memoryCacheSignature = null;
 
 function getCachePath() {
   if (process.env.HISTORY_ACCUMULATOR_PATH) {
@@ -29,17 +32,35 @@ function emptyCache() {
 function loadCache() {
   const cachePath = getCachePath();
   try {
-    if (!fs.existsSync(cachePath)) return emptyCache();
+    const stat = fs.statSync(cachePath);
+    const signature = `${stat.mtimeMs}:${stat.size}`;
+    if (memoryCache && memoryCachePath === cachePath && memoryCacheSignature === signature) {
+      return memoryCache;
+    }
 
     const cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
     if (cache?.version === CACHE_VERSION && cache.namespaces && typeof cache.namespaces === "object") {
+      memoryCache = cache;
+      memoryCachePath = cachePath;
+      memoryCacheSignature = signature;
       return cache;
     }
     console.warn("Ignoring incompatible history accumulator cache");
   } catch (error) {
+    if (error?.code === "ENOENT") {
+      if (memoryCachePath !== cachePath || memoryCacheSignature !== null) {
+        memoryCache = emptyCache();
+        memoryCachePath = cachePath;
+        memoryCacheSignature = null;
+      }
+      return memoryCache;
+    }
     console.error("Failed to load history accumulator cache", error);
   }
-  return emptyCache();
+  memoryCache = emptyCache();
+  memoryCachePath = cachePath;
+  memoryCacheSignature = null;
+  return memoryCache;
 }
 
 function saveCache(cache) {
@@ -50,6 +71,10 @@ function saveCache(cache) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(temporaryPath, JSON.stringify(cache), "utf8");
     fs.renameSync(temporaryPath, cachePath);
+    const stat = fs.statSync(cachePath);
+    memoryCache = cache;
+    memoryCachePath = cachePath;
+    memoryCacheSignature = `${stat.mtimeMs}:${stat.size}`;
   } catch (error) {
     console.error("Failed to save history accumulator cache", error);
     try {

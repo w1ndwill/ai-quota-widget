@@ -5,42 +5,48 @@ const os = require("node:os");
 const path = require("node:path");
 const { scanFilesIncrementally } = require("./incremental-scan-engine");
 
-function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSessionsRoot(), sources = null } = {}) {
+function readLocalTokenUsage({ now = Date.now(), days = 1, catalogDays = days, root = defaultSessionsRoot(), sources = null } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
-  const recent = readRecentUsageEvents({ since, root });
+  const catalogSince = now - Math.max(days, catalogDays) * 24 * 60 * 60 * 1000;
+  const recent = readRecentUsageEvents({ since: catalogSince, root });
   const sessions = new Set(recent.events.map((event) => event.file));
   const eventFiles = new Set(recent.events.map((usage) => usage.file));
   const allUsages = [
     ...recent.events,
     ...recent.fallbacks.filter((usage) => !eventFiles.has(usage.file))
   ];
-  const usages = Array.isArray(sources)
+  const catalogUsages = Array.isArray(sources)
     ? allUsages.filter((usage) => sources.includes(usage.source))
     : allUsages;
+  const usages = catalogUsages.filter((usage) => usage.t >= since);
 
   const totals = usages.reduce(
     (acc, item) => {
       acc.input += item.input;
       acc.cached += item.cached;
+      acc.cacheWrite += item.cacheWrite || 0;
       acc.output += item.output;
       acc.reasoning += item.reasoning;
       acc.total += item.total || item.input + item.output + item.reasoning;
       return acc;
     },
-    { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 }
+    { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 }
   );
   const modelUsage = summarizeModelUsage(usages);
+  const modelCatalog = catalogDays > days ? summarizeModelUsage(catalogUsages) : modelUsage;
 
   if (!usages.length) {
     return {
       source: "localSessions",
       input: null,
       cached: null,
+      cacheWrite: null,
       output: null,
       reasoning: null,
       total: null,
       cacheHitRate: null,
       modelUsage: [],
+      modelCatalog,
       sessions: 0,
       error: "No local Codex session usage found"
     };
@@ -50,12 +56,14 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
     source: "localSessions",
     input: totals.input,
     cached: totals.cached,
+    cacheWrite: totals.cacheWrite,
     output: totals.output,
     reasoning: totals.reasoning,
     total: totals.total,
     cacheHitRate: Math.round((totals.cached / Math.max(1, totals.input)) * 100),
     modelUsage,
-      sessions: new Set(usages.map((usage) => usage.file)).size || sessions.size,
+    modelCatalog,
+    sessions: new Set(usages.map((usage) => usage.file)).size || sessions.size,
     since
   };
 }
@@ -83,6 +91,7 @@ function readHourlyTokenHistory({ now = Date.now(), hours = 24, root = defaultSe
     t: firstHour + index * hourMs,
     input: 0,
     cached: 0,
+    cacheWrite: 0,
     output: 0,
     reasoning: 0,
     total: 0
@@ -175,7 +184,7 @@ function summarizeModelUsage(usages) {
     const source = usage.source || "";
     const key = `${source}\u0000${model}`;
     if (!models.has(key)) {
-      models.set(key, { model, ...(source ? { source } : {}), input: 0, cached: 0, output: 0, reasoning: 0, total: 0 });
+      models.set(key, { model, ...(source ? { source } : {}), input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 });
     }
     addUsageToBucket(models.get(key), usage);
   }
@@ -188,13 +197,14 @@ function readModelName(item) {
 }
 
 function addUsage(map, key, usage) {
-  if (!map[key]) map[key] = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+  if (!map[key]) map[key] = { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 };
   addUsageToBucket(map[key], usage);
 }
 
 function addUsageToBucket(bucket, usage) {
   bucket.input += usage.input;
   bucket.cached += usage.cached;
+  bucket.cacheWrite = (bucket.cacheWrite || 0) + (usage.cacheWrite || 0);
   bucket.output += usage.output;
   bucket.reasoning += usage.reasoning || 0;
   bucket.total += usage.total || usage.input + usage.output + (usage.reasoning || 0);
@@ -227,14 +237,18 @@ function readLatestUsage(file) {
 
 function normalizeUsage(usage) {
   const cached = readNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens, 0);
+  const cacheWrite = readNumber(usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens, 0);
   let input = readNumber(usage.input_tokens, 0);
   if (usage.cache_read_input_tokens !== undefined || usage.cacheReadInputTokens !== undefined) {
     input = input + cached;
   }
+  if (usage.cache_creation_input_tokens !== undefined || usage.cacheCreationInputTokens !== undefined) {
+    input = input + cacheWrite;
+  }
   const output = readNumber(usage.output_tokens, 0);
   const reasoning = readNumber(usage.reasoning_output_tokens, 0);
   const total = readNumber(usage.total_tokens, input + output + reasoning);
-  return { input, cached, output, reasoning, total };
+  return { input, cached, cacheWrite, output, reasoning, total };
 }
 
 function listJsonlFiles(root) {
@@ -311,6 +325,7 @@ function readTokenHistory({ now = Date.now(), days = 45, hours = 24, root = defa
     t: firstHour + index * hourMs,
     input: 0,
     cached: 0,
+    cacheWrite: 0,
     output: 0,
     reasoning: 0,
     total: 0

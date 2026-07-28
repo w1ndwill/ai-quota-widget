@@ -11,9 +11,7 @@ const {
 } = require("./antigravity-token-service");
 
 function readUsageWithModelCatalog(reader, payload = {}) {
-  const usage = reader(payload);
-  const catalog = reader({ ...payload, days: 45 });
-  return { ...usage, modelCatalog: catalog.modelUsage || [] };
+  return reader({ ...payload, catalogDays: 45 });
 }
 
 function parseSelection(selection = "all") {
@@ -30,12 +28,19 @@ function readCumulative({ selection = "all", model, source = null, enableCodex =
   const selected = selection !== "all" || model == null
     ? parseSelection(selection)
     : { model, source };
-  const sum = { input: 0, cached: 0, output: 0, reasoning: 0, total: 0 };
+  const sum = { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 };
+  const modelUsage = [];
   let cacheInput = 0;
   let cacheKnown = false;
-  const addHistory = (history, hasCacheData) => {
-    for (const value of Object.values(history.daily)) {
+  const addUsage = (usage, hasCacheData, defaultSource) => {
+    const items = selected.model === "all"
+      ? usage?.modelUsage || []
+      : (usage?.modelUsage || []).filter((item) => item.model === selected.model);
+    for (const item of items) {
+      const value = { ...item, source: item.source || defaultSource };
+      modelUsage.push(value);
       sum.input += value.input || 0;
+      sum.cacheWrite += value.cacheWrite || 0;
       sum.output += value.output || 0;
       sum.reasoning += value.reasoning || 0;
       sum.total += value.total || 0;
@@ -50,13 +55,14 @@ function readCumulative({ selection = "all", model, source = null, enableCodex =
   const wantsAntigravity = !selected.source || selected.source === "antigravity";
   const wantsCodex = !selected.source || selected.source === "codex";
   const wantsClaude = !selected.source || selected.source === "claude";
-  if (enableCodex && wantsCodex) addHistory(readTokenHistory({ model: selected.model, source: "codex", days: 9999 }), true);
-  if (enableClaudeCode && wantsClaude) addHistory(readTokenHistory({ model: selected.model, source: "claude", days: 9999 }), true);
-  if (enableAntigravity && wantsAntigravity) addHistory(readAntigravityHistory({ model: selected.model, days: 9999 }), false);
+  if (enableCodex && wantsCodex) addUsage(readLocalTokenUsage({ days: 9999, sources: ["codex"] }), true, "codex");
+  if (enableClaudeCode && wantsClaude) addUsage(readLocalTokenUsage({ days: 9999, sources: ["claude"] }), true, "claude");
+  if (enableAntigravity && wantsAntigravity) addUsage(readAntigravityUsage({ days: 9999 }), false, "antigravity");
   return {
     ...sum,
     cached: cacheKnown ? sum.cached : null,
-    cacheHitRate: cacheKnown && cacheInput > 0 ? Math.round((sum.cached / cacheInput) * 100) : null
+    cacheHitRate: cacheKnown && cacheInput > 0 ? Math.round((sum.cached / cacheInput) * 100) : null,
+    modelUsage
   };
 }
 

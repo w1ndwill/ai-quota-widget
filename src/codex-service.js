@@ -91,11 +91,10 @@ class CodexService extends EventEmitter {
       pending.reject(new Error("Codex app-server stopped"));
     }
     this.pending.clear();
-    if (this.process) {
-      this.process.kill();
-    }
+    const process = this.process;
     this.process = null;
     this.initialized = null;
+    process?.kill();
   }
 
   async ensureStarted() {
@@ -105,29 +104,32 @@ class CodexService extends EventEmitter {
 
     this.initialized = new Promise((resolve, reject) => {
       const command = findCodexCommand();
-      this.process = spawn(command, ["app-server"], {
+      const process = spawn(command, ["app-server"], {
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true
       });
+      this.process = process;
 
       const stderrLines = [];
-      const rl = readline.createInterface({ input: this.process.stdout });
+      const rl = readline.createInterface({ input: process.stdout });
       rl.on("line", (line) => this.handleLine(line));
 
-      this.process.stderr.on("data", (chunk) => {
+      process.stderr.on("data", (chunk) => {
         const line = chunk.toString("utf8").trim();
         if (line) {
           stderrLines.push(line);
         }
       });
 
-      this.process.on("error", (error) => {
+      process.on("error", (error) => {
+        if (this.process !== process) return;
         this.lastError = error.message;
         this.initialized = null;
         reject(error);
       });
 
-      this.process.on("exit", (code) => {
+      process.on("exit", (code) => {
+        if (this.process !== process) return;
         const message = `Codex app-server exited${code === null ? "" : ` with code ${code}`}`;
         this.lastError = stderrLines.at(-1) || message;
         this.process = null;
@@ -154,8 +156,10 @@ class CodexService extends EventEmitter {
           resolve();
         })
         .catch((error) => {
-          this.lastError = error.message;
-          this.initialized = null;
+          if (this.process === process) {
+            this.lastError = error.message;
+            this.initialized = null;
+          }
           reject(error);
         });
     });

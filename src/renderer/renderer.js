@@ -44,6 +44,9 @@ const elements = {
   cachedTokens: document.getElementById("cachedTokens"),
   outputTokens: document.getElementById("outputTokens"),
   tokenCost: document.getElementById("tokenCost"),
+  tokenValueBox: document.getElementById("tokenValueBox"),
+  tokenValueLabel: document.getElementById("tokenValueLabel"),
+  tokenValue: document.getElementById("tokenValue"),
   inputSegment: document.getElementById("inputSegment"),
   cacheSegment: document.getElementById("cacheSegment"),
   outputSegment: document.getElementById("outputSegment"),
@@ -82,6 +85,7 @@ const DEFAULT_HOTKEYS = Object.freeze({
 let history = readHistory();
 let mergedModels = [];
 let latestResetCredits = [];
+let initialDataReady = false;
 const MODEL_SOURCES = [
   { key: "codex", label: "Codex" },
   { key: "claude", label: "Claude Code" },
@@ -93,6 +97,7 @@ let historyRenderInFlight = false;
 let historyRenderQueued = false;
 let historyRenderQueuedImmediate = false;
 let lastHistoryRenderAt = 0;
+let historyRenderingEnabled = false;
 const HISTORY_RENDER_INTERVAL = 60_000;
 
 function parseModelSelection(selection) {
@@ -124,9 +129,6 @@ elements.pinButton.addEventListener("click", async () => {
   const pinned = await window.aiQuota.toggleAlwaysOnTop();
   applyPinnedState(pinned);
 });
-setupSettings();
-setupModelSelect();
-setupRingLayers();
 const trendCard = document.querySelector(".trend-card");
 trendCard.addEventListener("click", (event) => {
   event.stopPropagation();
@@ -151,14 +153,6 @@ window.addEventListener("keydown", (event) => {
 window.aiQuota.onUpdated(render);
 window.aiQuota.onCompactChanged((compact) => applyCompactState(compact));
 window.aiQuota.onPinnedChanged((pinned) => applyPinnedState(pinned));
-renderBar(elements.shortBar, 0, "gray");
-renderBar(elements.longBar, 0, "gray");
-setCompact(isCompact);
-setupTokenRangeToggle();
-generateAndSaveTrayIcon();
-refresh();
-// 历史图会同步扫描大量本地日志，延迟到额度首屏已经发起请求后再读取。
-setTimeout(() => scheduleHistoryRender(true), 800);
 setInterval(() => {
   if (!document.hidden) refresh();
 }, 5 * 60_000);
@@ -167,6 +161,27 @@ document.addEventListener("visibilitychange", () => {
   if (!lastSnapshot?.updatedAt || Date.now() - lastSnapshot.updatedAt > 60_000) refresh();
   scheduleHistoryRender(true);
 });
+
+async function loadInitialData() {
+  try {
+    const cached = await window.aiQuota.readCached();
+    if (cached && (!lastSnapshot?.updatedAt || cached.updatedAt >= lastSnapshot.updatedAt)) render(cached);
+  } catch {}
+
+  try {
+    await refresh();
+  } finally {
+    initialDataReady = true;
+    if (tokenRange === "cumulative" && lastSnapshot) {
+      const tokenData = getTokenForModel(lastSnapshot, selectedModel);
+      await renderTokenStats(tokenData, mergedModels, ++tokenRenderGeneration);
+    }
+    historyRenderingEnabled = true;
+    const renderWhenIdle = () => scheduleHistoryRender(true);
+    if (window.requestIdleCallback) window.requestIdleCallback(renderWhenIdle, { timeout: 2_000 });
+    else setTimeout(renderWhenIdle, 250);
+  }
+}
 
 async function setupSettings() {
   const panel = document.getElementById("settingsPanel");
@@ -348,11 +363,14 @@ const I18N = {
     trendTitle: "Token 消耗趋势",
     heatTitle: "每日Token消耗",
     hitRate: "命中率分析",
-    modelUsage: "按模型 Token 用量",
     token24h: "近 24h Token",
     tokenInput: "输入",
     tokenCache: "缓存",
     tokenOutput: "输出",
+    tokenValue: "API 估值",
+    tokenValueHint: "按标准文本 API 公开价格估算；不含长上下文、区域、工具调用及缓存存储附加费，不代表订阅实际账单。",
+    tokenValuePartial: (models) => `仅包含已识别模型；未计价：${models}`,
+    tokenValueUnavailable: "当前模型没有可用的公开 API 单价。",
     refreshTip: "手动刷新",
     pinTip: "置顶",
     unpinTip: "取消置顶",
@@ -405,16 +423,10 @@ const I18N = {
     trend24Summary: "数据积累中",
     trend7Summary: "日消耗",
     trendHover: "悬浮曲线查看数值",
-    sourceLocal: "本地会话",
-    sourceAPI: "接口数据",
-    sourceMerged: "Codex + Antigravity",
-    sourceAG: "Antigravity · 估算",
     hitSummaryExcellent: "上下文复用极佳，输入成本被大幅削减。",
     hitSummaryGood: "上下文复用良好，有显著的成本节省效果。",
     hitSummaryMid: "缓存有贡献，仍可继续稳定提示词结构。",
     hitSummaryLow: "缓存复用偏少，长上下文任务成本更容易上升。",
-    modelCount: (n) => `${n} 个模型`,
-    noLocalData: "暂无本地会话数据",
     shellTitle: "点击空白处刷新",
     resetCount: (n) => `${n} 张`,
     resetCard: "重置卡",
@@ -426,18 +438,20 @@ const I18N = {
     used: "已使用",
     expired: "已过期",
     unknownStatus: "未知状态",
-    tokenCostSession: (n) => `近 24h · ${n} 会话`,
   },
   en: {
     resetSub: "Restores 5h & weekly quota",
     trendTitle: "Token Trend",
     heatTitle: "Daily Token Usage",
     hitRate: "Cache Hit Rate",
-    modelUsage: "Token by Model",
     token24h: "24h Tokens",
     tokenInput: "Input",
     tokenCache: "Cache",
     tokenOutput: "Output",
+    tokenValue: "API value",
+    tokenValueHint: "Estimated from public standard text API prices; excludes long-context, regional, tool, and cache-storage surcharges, and is not your subscription bill.",
+    tokenValuePartial: (models) => `Known models only; not priced: ${models}`,
+    tokenValueUnavailable: "No public API price is available for the current model.",
     refreshTip: "Refresh",
     pinTip: "Pin",
     unpinTip: "Unpin",
@@ -490,16 +504,10 @@ const I18N = {
     trend24Summary: "Accumulating",
     trend7Summary: "Daily",
     trendHover: "Hover to see values",
-    sourceLocal: "Local sessions",
-    sourceAPI: "API data",
-    sourceMerged: "Codex + Antigravity",
-    sourceAG: "Antigravity · Estimated",
     hitSummaryExcellent: "Outstanding cache reuse, significantly slashing input costs.",
     hitSummaryGood: "Strong context reuse keeps input costs low.",
     hitSummaryMid: "Cache helps, consider stabilizing prompt structure.",
     hitSummaryLow: "Low cache reuse may increase costs on long-context tasks.",
-    modelCount: (n) => `${n} models`,
-    noLocalData: "No local session data",
     shellTitle: "Click to refresh",
     resetCount: (n) => `${n} cards`,
     resetCard: "Reset card",
@@ -511,11 +519,22 @@ const I18N = {
     used: "Used",
     expired: "Expired",
     unknownStatus: "Unknown status",
-    tokenCostSession: (n) => `24h · ${n} sessions`,
   }
 };
 let i18n = I18N.zh;
+
+// Startup helpers render translated labels, so they must run after i18n exists.
+setupSettings();
+setupModelSelect();
+setupRingLayers();
+renderBar(elements.shortBar, 0, "gray");
+renderBar(elements.longBar, 0, "gray");
 applyPinnedState(true);
+applyCompactState(isCompact);
+if (isCompact) window.aiQuota.setCompact(true);
+setupTokenRangeToggle();
+generateAndSaveTrayIcon();
+loadInitialData();
 
 function t(key, ...args) {
   let val = i18n[key];
@@ -535,6 +554,7 @@ function applyLang(lang) {
     set("settingsSave", "saveBtn");
     set("shortLabel", "shortLabel");
     set("longLabel", "weekLabel");
+    set("tokenValueLabel", "tokenValue");
     const optLight = document.querySelector("#themeSelect option[value=light]");
     const optDark = document.querySelector("#themeSelect option[value=dark]");
     if (optLight) optLight.textContent = t("themeLight");
@@ -648,7 +668,7 @@ function render(snapshot) {
     const tokenData = getTokenForModel(snapshot, selectedModel);
     renderTokenStats(tokenData, mergedModels, ++tokenRenderGeneration);
 
-    recordHistory(quota);
+    if (!snapshot?.stale) recordHistory(quota);
     scheduleHistoryRender();
   } catch (e) {
     elements.updatedAt.textContent = "ERR:" + (e.message || "").slice(0, 30);
@@ -743,7 +763,6 @@ function setupModelSelect() {
   elements.modelPickerTrigger = trigger;
   elements.modelPickerLabel = label;
   elements.modelPickerMenu = menu;
-  document.querySelector(".model-usage-card")?.remove();
 
   trigger.addEventListener("click", () => {
     picker.classList.contains("open") ? closeModelPicker() : openModelPicker();
@@ -858,10 +877,6 @@ function buildModelOption(item) {
   return option;
 }
 
-function modelLabel(item) {
-  return item.label ?? (item.model === "unknown" ? "\u672a\u77e5\u6a21\u578b" : item.model);
-}
-
 function sourceLabel(stats) {
   if (!stats) return "\u65e0\u6570\u636e";
   const suffix = tokenRange === "cumulative" ? " · 累计" : "";
@@ -886,24 +901,25 @@ function closeModelPicker() {
 function buildMergedModels(snapshot) {
   const allModels = [];
 
-  function addModels(list, defaultSource) {
+  function addModels(list, defaultSource, currentUsage) {
     if (!Array.isArray(list)) return;
     for (const m of list) {
       const source = m.source || defaultSource;
       allModels.push({
         ...m,
         source,
+        currentUsage,
         sourceModel: `${source}:${m.model}`,
         displayLabel: m.model
       });
     }
   }
 
-  addModels(snapshot?.localTokenUsage?.modelUsage, "codex");
-  addModels(snapshot?.localTokenUsage?.modelCatalog, "codex");
-  addModels(snapshot?.quota?.tokenStats?.modelUsage, "codex");
-  addModels(snapshot?.antigravityTokenUsage?.modelUsage, "antigravity");
-  addModels(snapshot?.antigravityTokenUsage?.modelCatalog, "antigravity");
+  addModels(snapshot?.localTokenUsage?.modelUsage, "codex", true);
+  addModels(snapshot?.quota?.tokenStats?.modelUsage, "codex", true);
+  addModels(snapshot?.antigravityTokenUsage?.modelUsage, "antigravity", true);
+  addModels(snapshot?.localTokenUsage?.modelCatalog, "codex", false);
+  addModels(snapshot?.antigravityTokenUsage?.modelCatalog, "antigravity", false);
 
   const seen = new Set();
   return allModels.filter((m) => {
@@ -1004,31 +1020,27 @@ function mergeAllTokens(snapshot) {
     reasoning,
     total,
     cacheHitRate: hitRateInput > 0 ? Math.round((hitRateCached / hitRateInput) * 100) : null,
-    modelUsage: mergedModels,
+    modelUsage: currentModelUsage(snapshot),
     sessions: null
   };
 }
 
-function renderModelUsage(modelUsage) {
-  const models = Array.isArray(modelUsage) ? modelUsage : [];
-  elements.modelUsageList.replaceChildren();
-  elements.modelUsageSummary.textContent = models.length ? t("modelCount", models.length) : "24h";
-  if (!models.length) {
-    const empty = document.createElement("span");
-    empty.className = "model-empty";
-    empty.textContent = t("noLocalData");
-    elements.modelUsageList.append(empty);
-    return;
-  }
-  for (const item of models) {
-    const row = document.createElement("div");
-    const name = document.createElement("span");
-    const total = document.createElement("b");
-    name.textContent = item.model === "unknown" ? "未知模型（旧记录）" : item.model;
-    total.textContent = formatToken(item.total);
-    row.append(name, total);
-    elements.modelUsageList.append(row);
-  }
+function currentModelUsage(snapshot) {
+  const models = [];
+  const seen = new Set();
+  const add = (items, defaultSource) => {
+    for (const item of items || []) {
+      const source = item.source || defaultSource;
+      const key = `${source}:${item.model}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      models.push({ ...item, source });
+    }
+  };
+  add(snapshot?.localTokenUsage?.modelUsage, "codex");
+  add(snapshot?.quota?.tokenStats?.modelUsage, "codex");
+  add(snapshot?.antigravityTokenUsage?.modelUsage, "antigravity");
+  return models;
 }
 
 function renderWindow(prefix, quotaWindow, fallbackLabel, hideWhenMissing = true, options = {}) {
@@ -1167,22 +1179,26 @@ async function renderTokenStats(stats, modelUsage, renderId) {
 
   if (tokenRange === "cumulative") {
     titleText = "累计 Token";
-    try {
-      const cumStats = await window.aiQuota.readCumulativeTokens(selectedModel);
-      if (renderId !== tokenRenderGeneration) return;
-      if (cumStats) {
-        displayStats = {
-          ...cumStats,
-          source: parseModelSelection(selectedModel).source || (selectedModel === "all" ? "merged" : null),
-          cacheHitRate: cumStats.cacheHitRate ?? ((cumStats.cached == null || cumStats.input === 0) ? null : Math.round((cumStats.cached / cumStats.input) * 100))
-        };
+    if (!initialDataReady) {
+      displayStats = null;
+    } else {
+      try {
+        const cumStats = await window.aiQuota.readCumulativeTokens(selectedModel);
+        if (renderId !== tokenRenderGeneration) return;
+        if (cumStats) {
+          displayStats = {
+            ...cumStats,
+            source: parseModelSelection(selectedModel).source || (selectedModel === "all" ? "merged" : null),
+            cacheHitRate: cumStats.cacheHitRate ?? ((cumStats.cached == null || cumStats.input === 0) ? null : Math.round((cumStats.cached / cumStats.input) * 100))
+          };
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
     }
   } else {
     if (renderId !== tokenRenderGeneration) return;
-    const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => (item.sourceModel || item.model) === selectedModel);
+    const selectedUsage = selectedModel === "all" ? null : modelUsage?.find((item) => item.currentUsage && (item.sourceModel || item.model) === selectedModel);
     if (selectedUsage) {
       displayStats = {
         ...stats,
@@ -1219,6 +1235,7 @@ async function renderTokenStats(stats, modelUsage, renderId) {
     : stats?.error
       ? t("refreshFailed")
       : t("noData");
+  renderTokenValue(stats, hasTokenData);
   if (hitRate == null) {
     elements.cacheHitRate.classList.add("text-label");
     elements.cacheHitRate.textContent = t("uncomputable");
@@ -1244,6 +1261,23 @@ async function renderTokenStats(stats, modelUsage, renderId) {
   elements.inputSegment.style.width = hasTokenData ? `${(uncachedInput / knownTotal) * 100}%` : "0%";
   elements.cacheSegment.style.width = hasTokenData ? `${(cached / knownTotal) * 100}%` : "0%";
   elements.outputSegment.style.width = hasTokenData ? `${(output / knownTotal) * 100}%` : "0%";
+}
+
+function renderTokenValue(stats, hasTokenData) {
+  elements.tokenValueLabel.textContent = t("tokenValue");
+  const estimate = hasTokenData ? window.TokenPricing?.estimateTokenCost(stats) : null;
+  if (!estimate?.pricedModels) {
+    elements.tokenValue.textContent = "--";
+    elements.tokenValueBox.classList.add("unavailable");
+    elements.tokenValueBox.title = hasTokenData ? t("tokenValueUnavailable") : t("noData");
+    return;
+  }
+
+  elements.tokenValue.textContent = `≈ ${window.TokenPricing.formatUsd(estimate.usd)}${estimate.complete ? "" : "+"}`;
+  elements.tokenValueBox.classList.remove("unavailable");
+  elements.tokenValueBox.title = estimate.complete
+    ? t("tokenValueHint")
+    : `${t("tokenValueHint")} ${t("tokenValuePartial", estimate.unknownModels.join(", "))}`;
 }
 
 function renderBar(bar, percent, tone) {
@@ -1272,6 +1306,7 @@ function recordHistory(quota) {
 }
 
 function scheduleHistoryRender(immediate = false) {
+  if (!historyRenderingEnabled) return;
   if (document.hidden) return;
   if (historyRenderInFlight) {
     historyRenderQueued = true;

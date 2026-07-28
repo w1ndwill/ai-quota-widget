@@ -270,6 +270,7 @@ test("reads local Codex session token usage", (t) => {
   assert.deepEqual(readLatestUsage(file), {
     input: 120,
     cached: 80,
+    cacheWrite: 0,
     output: 40,
     reasoning: 10,
     total: 250
@@ -364,6 +365,33 @@ test("groups local token usage by the model active when each event was recorded"
   const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   assert.equal(daily[dayKey].total, 80);
   assert.equal(hourly.reduce((sum, bucket) => sum + bucket.total, 0), 80);
+});
+
+test("builds current usage and the longer model catalog from one read", (t) => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { readLocalTokenUsage } = require("../src/token-usage-service");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ai-bar-model-catalog-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const now = Date.parse("2026-07-11T12:00:00Z");
+  const old = now - 10 * 24 * 60 * 60_000;
+  const rows = [
+    { timestamp: new Date(old).toISOString(), payload: { model: "old-model" } },
+    { timestamp: new Date(old + 1).toISOString(), payload: { info: { last_token_usage: { input_tokens: 80, total_tokens: 80 } } } },
+    { timestamp: new Date(now).toISOString(), payload: { model: "current-model" } },
+    { timestamp: new Date(now + 1).toISOString(), payload: { info: { last_token_usage: { input_tokens: 120, total_tokens: 120 } } } }
+  ];
+  fs.writeFileSync(path.join(dir, "rollout.jsonl"), rows.map(JSON.stringify).join("\n"));
+
+  const usage = readLocalTokenUsage({ now: now + 60_000, days: 1, catalogDays: 45, root: dir });
+  assert.deepEqual(usage.modelUsage.map(({ model, total }) => ({ model, total })), [
+    { model: "current-model", total: 120 }
+  ]);
+  assert.deepEqual(usage.modelCatalog.map(({ model, total }) => ({ model, total })), [
+    { model: "current-model", total: 120 },
+    { model: "old-model", total: 80 }
+  ]);
 });
 
 test("keeps Codex and Claude model usage in separate source groups", (t) => {
@@ -477,6 +505,7 @@ test("reads Claude Code projects session log with message.model, message.usage a
           usage: {
             input_tokens: 200,
             cache_read_input_tokens: 500,
+            cache_creation_input_tokens: 100,
             output_tokens: 30
           }
         }
@@ -486,12 +515,13 @@ test("reads Claude Code projects session log with message.model, message.usage a
   );
 
   const usage = readLocalTokenUsage({ now: now + 60_000, root: dir });
-  assert.equal(usage.input, 800); // 100 + (200 + 500) = 800
+  assert.equal(usage.input, 900); // 100 + (200 + 500 cache read + 100 cache write)
   assert.equal(usage.cached, 500);
+  assert.equal(usage.cacheWrite, 100);
   assert.equal(usage.output, 50);
-  assert.equal(usage.total, 850);
+  assert.equal(usage.total, 950);
   assert.deepEqual(usage.modelUsage, [
-    { model: "deepseek-v4-pro", input: 800, cached: 500, output: 50, reasoning: 0, total: 850 }
+    { model: "deepseek-v4-pro", input: 900, cached: 500, cacheWrite: 100, output: 50, reasoning: 0, total: 950 }
   ]);
 });
 

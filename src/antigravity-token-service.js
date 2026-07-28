@@ -11,9 +11,12 @@ const { scanFilesIncrementally } = require("./incremental-scan-engine");
 
 const CHARS_PER_TOKEN = 2.8; // mixed-language estimate including code and Chinese
 
-function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSessionsRoot() } = {}) {
+function readLocalTokenUsage({ now = Date.now(), days = 1, catalogDays = days, root = defaultSessionsRoot() } = {}) {
   const since = now - days * 24 * 60 * 60 * 1000;
-  const events = readRecentEvents({ since, root });
+  const catalogSince = now - Math.max(days, catalogDays) * 24 * 60 * 60 * 1000;
+  const catalogEvents = readRecentEvents({ since: catalogSince, root });
+  const events = catalogEvents.filter((event) => event.t >= since);
+  const modelCatalog = catalogDays > days ? summarizeModelUsage(catalogEvents) : summarizeModelUsage(events);
 
   if (!events.length) {
     return {
@@ -25,6 +28,7 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
       total: null,
       cacheHitRate: null,
       modelUsage: [],
+      modelCatalog,
       sessions: 0,
       note: "Token counts estimated from text content (no native token data)",
       error: null
@@ -54,6 +58,7 @@ function readLocalTokenUsage({ now = Date.now(), days = 1, root = defaultSession
     total: totals.total,
     cacheHitRate: null,
     modelUsage,
+    modelCatalog,
     sessions: sessionIds.size,
     note: "Token counts estimated from text content",
     error: null
@@ -234,44 +239,6 @@ function extractModel(step) {
   return null;
 }
 
-function estimateTokens(step) {
-  let inputChars = 0;
-  let outputChars = 0;
-  let reasoningChars = 0;
-
-  // User input → input tokens
-  if (step.type === "USER_INPUT" && step.content) {
-    inputChars += step.content.length;
-  }
-
-  // Thinking content → reasoning tokens
-  if (step.thinking) {
-    reasoningChars += step.thinking.length;
-  }
-
-  // Tool call args → output tokens
-  if (step.tool_calls) {
-    outputChars += JSON.stringify(step.tool_calls).length;
-  }
-
-  // content field in non-USER_INPUT steps
-  if (step.type !== "USER_INPUT" && step.content) {
-    if (typeof step.content === "string") {
-      if (step.type === "PLANNER_RESPONSE") {
-        outputChars += step.content.length;
-      } else {
-        inputChars += step.content.length;
-      }
-    }
-  }
-
-  return {
-    input: Math.round(inputChars / CHARS_PER_TOKEN),
-    output: Math.round(outputChars / CHARS_PER_TOKEN),
-    reasoning: Math.round(reasoningChars / CHARS_PER_TOKEN)
-  };
-}
-
 function summarizeModelUsage(events) {
   const models = new Map();
   for (const event of events) {
@@ -306,14 +273,6 @@ function matchesModel(event, model) {
 function localDateKey(timestamp) {
   const date = new Date(timestamp);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function safeStat(file) {
-  try {
-    return fs.statSync(file);
-  } catch {
-    return null;
-  }
 }
 
 function defaultSessionsRoot() {

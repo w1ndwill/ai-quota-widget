@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("aiQuota", {
-  read: () => ipcRenderer.invoke("quota:read"),
+  readCached: () => ipcRenderer.invoke("quota:cached"),
   refresh: () => ipcRenderer.invoke("quota:refresh"),
   toggleAlwaysOnTop: () => ipcRenderer.invoke("window:toggleAlwaysOnTop"),
   quitWindow: () => ipcRenderer.invoke("window:quit"),

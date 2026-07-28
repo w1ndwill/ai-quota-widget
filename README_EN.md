@@ -35,6 +35,7 @@ Keep only the quota summary in a small always-on-top window.
 - Reads the current account quota and reset time from the local Codex `app-server`.
 - Shows reset-card counts, status, and expiry details.
 - Calculates token usage from local Codex and Claude Code session logs.
+- Estimates the USD value of tokens from each model's public standard text API rates (not a subscription bill).
 - Estimates token usage from local Antigravity sessions; this is not official billing data.
 - Provides model filters, trend charts, a daily heatmap, and cache-hit rates where available.
 - Supports tray operation, always-on-top and compact modes, and single-instance startup.
@@ -54,6 +55,8 @@ Default shortcuts:
 If Codex is unavailable, local Claude Code and Antigravity usage statistics still work while the Codex quota area reports a read failure. An unused or unavailable data source simply has no usage data.
 
 The application reads session files for the current user only. Settings and caches are stored in the `.userdata` folder beside the application.
+
+The UI's HTML, CSS, and JavaScript load once when the window starts. While running, only quota and local-log data are refreshed as needed. Hiding the app to the tray pauses UI refreshes and releases the log worker and app-managed Codex subprocess after an idle period.
 
 ## Development
 
@@ -78,6 +81,7 @@ npm run release:win
 ```
 
 Build artifacts are written to `release/`. See [CHANGELOG.md](CHANGELOG.md) for version history.
+When rebuilding the unpacked app, the build script preserves settings and caches in `release/win-unpacked/.userdata`.
 
 ## Project structure
 

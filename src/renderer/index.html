@@ -126,7 +126,13 @@
               </div>
               <div class="token-card-body" id="tokenCardBody">
                 <b id="tokenCost">本地会话</b>
-                <strong id="totalTokens">--</strong>
+                <div class="token-total-row">
+                  <strong id="totalTokens">--</strong>
+                  <div class="token-value" id="tokenValueBox" aria-live="polite">
+                    <span id="tokenValueLabel">API 估值</span>
+                    <b id="tokenValue">--</b>
+                  </div>
+                </div>
                 <div class="token-bar detail-target" data-detail-key="tokenBar" tabindex="0">
                   <span id="inputSegment"></span>
                   <span id="cacheSegment"></span>
@@ -147,15 +153,6 @@
               </div>
               <strong id="cacheHitRate">--%</strong>
               <p id="hitSummary">当前接口没有返回缓存命中率字段</p>
-            </article>
-
-
-            <article class="token-card model-usage-card interactive-card" data-expand-title="按模型 Token 用量" tabindex="0" aria-label="按模型 Token 用量，点击放大">
-              <div class="card-head">
-                <span>按模型 Token 用量</span>
-                <b id="modelUsageSummary">近 24 小时</b>
-              </div>
-              <div id="modelUsageList" class="model-usage-list"><span class="model-empty">暂无本地会话数据</span></div>
             </article>
           </section>
 
@@ -321,6 +318,7 @@
         </footer>
       </div>
     </section>
+    <script src="./token-pricing.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>

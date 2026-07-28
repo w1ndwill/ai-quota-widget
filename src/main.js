@@ -58,12 +58,46 @@ try {
 }
 appConfig.hotkeys = normalizeHotkeys(appConfig.hotkeys);
 
+const dashboardCachePath = path.join(userDataPath, "dashboard_snapshot.json");
+let cachedDashboardSnapshot = loadDashboardSnapshot();
+let dashboardSavePending = Promise.resolve();
+
+function loadDashboardSnapshot() {
+  try {
+    return JSON.parse(fs.readFileSync(dashboardCachePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function sourceConfigMatches(snapshot) {
+  return ["enableCodex", "enableClaudeCode", "enableAntigravity"]
+    .every((key) => snapshot?.config?.[key] === appConfig[key]);
+}
+
+function getCachedDashboardSnapshot() {
+  if (!cachedDashboardSnapshot || !sourceConfigMatches(cachedDashboardSnapshot)) return null;
+  return { ...cachedDashboardSnapshot, config: appConfig, stale: true };
+}
+
+function saveDashboardSnapshot(snapshot) {
+  if (!snapshot || (!snapshot.quota && !snapshot.localTokenUsage && !snapshot.antigravityTokenUsage)) return;
+  cachedDashboardSnapshot = { ...snapshot, config: appConfig, error: null, errors: [] };
+  const serialized = JSON.stringify(cachedDashboardSnapshot);
+  dashboardSavePending = dashboardSavePending
+    .then(() => fs.promises.mkdir(userDataPath, { recursive: true }))
+    .then(() => fs.promises.writeFile(dashboardCachePath, serialized, "utf8"))
+    .catch(() => {});
+}
+
 const codex = new CodexService();
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let isCompact = false;
 let registeredHotkeys = {};
+let backgroundIdleTimer = null;
+const BACKGROUND_IDLE_MS = 30_000;
 
 function toggleMainPanel() {
   if (!mainWindow) return;
@@ -79,6 +113,23 @@ function toggleMainPanel() {
   }
   mainWindow.show();
   mainWindow.focus();
+}
+
+function cancelBackgroundIdle() {
+  if (!backgroundIdleTimer) return;
+  clearTimeout(backgroundIdleTimer);
+  backgroundIdleTimer = null;
+}
+
+function scheduleBackgroundIdle() {
+  cancelBackgroundIdle();
+  backgroundIdleTimer = setTimeout(() => {
+    backgroundIdleTimer = null;
+    if (mainWindow?.isVisible()) return;
+    codex.dispose();
+    stopUsageWorker();
+  }, BACKGROUND_IDLE_MS);
+  backgroundIdleTimer.unref?.();
 }
 
 function toggleAlwaysOnTop() {
@@ -144,6 +195,11 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.on("show", () => {
+    cancelBackgroundIdle();
+    if (appConfig.enableCodex) codex.ensureStarted().catch(() => {});
+  });
+  mainWindow.on("hide", scheduleBackgroundIdle);
   mainWindow.on("close", (event) => {
     if (!isQuitting) {
       event.preventDefault();
@@ -188,6 +244,7 @@ let lastAntigravityUsageTime = 0;
 const CACHE_TTL = 15000; // 15 seconds cache
 let cachedResetCredits = null;
 let lastResetCreditsTime = 0;
+let resetCreditsPending = null;
 const RESET_CREDITS_CACHE_TTL = 5 * 60_000;
 const HISTORY_CACHE_TTL = 60_000;
 const CUMULATIVE_CACHE_TTL = 5 * 60_000;
@@ -199,6 +256,8 @@ let snapshotInFlight = null;
 let usageWorker = null;
 let usageWorkerNextId = 1;
 const usageWorkerPending = new Map();
+let usageWorkerIdleTimer = null;
+const USAGE_WORKER_IDLE_MS = 30_000;
 
 function clearUsageCaches() {
   cachedLocalUsage = null;
@@ -210,6 +269,10 @@ function clearUsageCaches() {
 }
 
 function getUsageWorker() {
+  if (usageWorkerIdleTimer) {
+    clearTimeout(usageWorkerIdleTimer);
+    usageWorkerIdleTimer = null;
+  }
   if (usageWorker) return usageWorker;
 
   const worker = new Worker(path.join(__dirname, "usage-worker.js"));
@@ -220,6 +283,7 @@ function getUsageWorker() {
     usageWorkerPending.delete(id);
     if (error) pending.reject(new Error(error));
     else pending.resolve(result);
+    scheduleUsageWorkerIdle();
   });
   worker.on("error", (error) => {
     if (usageWorker === worker) resetUsageWorker(error);
@@ -231,6 +295,29 @@ function getUsageWorker() {
   });
   usageWorker = worker;
   return worker;
+}
+
+function scheduleUsageWorkerIdle() {
+  if (!usageWorker || usageWorkerPending.size || usageWorkerIdleTimer) return;
+  const worker = usageWorker;
+  usageWorkerIdleTimer = setTimeout(() => {
+    usageWorkerIdleTimer = null;
+    if (usageWorker !== worker || usageWorkerPending.size) return;
+    usageWorker = null;
+    worker.terminate();
+  }, USAGE_WORKER_IDLE_MS);
+  usageWorkerIdleTimer.unref?.();
+}
+
+function stopUsageWorker(force = false) {
+  if (usageWorkerIdleTimer) {
+    clearTimeout(usageWorkerIdleTimer);
+    usageWorkerIdleTimer = null;
+  }
+  if (!usageWorker || (usageWorkerPending.size && !force)) return;
+  const worker = usageWorker;
+  usageWorker = null;
+  worker.terminate();
 }
 
 function resetUsageWorker(error) {
@@ -324,10 +411,23 @@ async function readCachedResetCredits() {
   if (cachedResetCredits && Date.now() - lastResetCreditsTime < RESET_CREDITS_CACHE_TTL) {
     return cachedResetCredits;
   }
-  const credits = await readResetCredits();
-  cachedResetCredits = credits;
-  lastResetCreditsTime = Date.now();
-  return credits;
+  if (resetCreditsPending) return resetCreditsPending;
+  resetCreditsPending = readResetCredits()
+    .then((credits) => {
+      cachedResetCredits = credits;
+      lastResetCreditsTime = Date.now();
+      const cached = getCachedDashboardSnapshot();
+      if (cached) {
+        const snapshot = { ...cached, resetCredits: credits, stale: false, updatedAt: Date.now() };
+        saveDashboardSnapshot(snapshot);
+        mainWindow?.webContents.send("quota:updated", snapshot);
+      }
+      return credits;
+    })
+    .finally(() => {
+      resetCreditsPending = null;
+    });
+  return resetCreditsPending;
 }
 
 async function readSnapshot() {
@@ -339,13 +439,20 @@ async function readSnapshot() {
   let quotaError = null;
 
   const now = Date.now();
+  const tokenUsageResults = Promise.allSettled([
+    appConfig.enableAntigravity ? readCachedAntigravityUsage(now) : Promise.resolve(null),
+    appConfig.enableCodex || appConfig.enableClaudeCode ? readCachedLocalUsage(now) : Promise.resolve(null)
+  ]);
 
   if (appConfig.enableCodex) {
     quota = codex.getCachedQuota();
-    const [quotaResult, resetResult] = await Promise.allSettled([
-      codex.readQuota(),
-      readCachedResetCredits()
-    ]);
+    // Reset-card data is auxiliary. Refresh it independently so a slow network
+    // request cannot hold back quota and local token data on the first paint.
+    readCachedResetCredits().catch(() => {});
+    const quotaResult = await Promise.resolve(codex.readQuota()).then(
+      (value) => ({ status: "fulfilled", value }),
+      (reason) => ({ status: "rejected", reason })
+    );
 
     if (quotaResult.status === "fulfilled") {
       quota = quotaResult.value;
@@ -353,19 +460,11 @@ async function readSnapshot() {
       errors.push(quotaResult.reason.message);
       quotaError = quotaResult.reason.message;
     }
-
-    if (resetResult.status === "fulfilled") {
-      resetCredits = resetResult.value;
-    } else {
-      errors.push(resetResult.reason.message);
-    }
   }
 
   // Parse local logs in a worker so a large transcript cannot block Electron's main loop.
-  const [antigravityResult, localResult] = await Promise.allSettled([
-    appConfig.enableAntigravity ? readCachedAntigravityUsage(now) : Promise.resolve(null),
-    appConfig.enableCodex || appConfig.enableClaudeCode ? readCachedLocalUsage(now) : Promise.resolve(null)
-  ]);
+  const [antigravityResult, localResult] = await tokenUsageResults;
+  resetCredits = cachedResetCredits;
   if (antigravityResult.status === "fulfilled") {
     antigravityTokenUsage = antigravityResult.value;
   } else {
@@ -388,7 +487,7 @@ async function readSnapshot() {
     errors.push(localResult.reason.message);
   }
 
-  return {
+  const snapshot = {
     quota,
     resetCredits,
     localTokenUsage,
@@ -399,6 +498,8 @@ async function readSnapshot() {
     errors,
     updatedAt: Date.now()
   };
+  saveDashboardSnapshot(snapshot);
+  return snapshot;
 }
 
 function readSnapshotOnce() {
@@ -435,8 +536,10 @@ function resizeWindow(compact) {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle("quota:read", readSnapshotOnce);
-  ipcMain.handle("quota:refresh", refreshAndPush);
+  ipcMain.handle("quota:cached", getCachedDashboardSnapshot);
+  // The invoking renderer already receives the returned snapshot; broadcasting
+  // it as well would render every refresh twice.
+  ipcMain.handle("quota:refresh", readSnapshotOnce);
   ipcMain.handle("window:toggleAlwaysOnTop", toggleAlwaysOnTop);
   ipcMain.handle("window:quit", () => {
     mainWindow?.hide();
@@ -499,10 +602,10 @@ app.whenReady().then(() => {
     try {
       const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
       const iconPath = path.join(app.getPath("userData"), "tray_icon.png");
-      if (!fs.existsSync(app.getPath("userData"))) {
+      if (!fs.existsSync(iconPath)) {
         fs.mkdirSync(app.getPath("userData"), { recursive: true });
+        fs.writeFileSync(iconPath, base64Data, "base64");
       }
-      fs.writeFileSync(iconPath, base64Data, "base64");
       tray?.setImage(iconPath);
     } catch (e) {
       console.error("Failed to save tray icon:", e);
@@ -510,9 +613,12 @@ app.whenReady().then(() => {
   });
 
   codex.on("quota-updated", (quota) => {
+    const cached = getCachedDashboardSnapshot() || {};
     mainWindow?.webContents.send("quota:updated", {
+      ...cached,
       quota,
-      resetCredits: null,
+      config: appConfig,
+      stale: false,
       error: null,
       errors: [],
       updatedAt: Date.now()
@@ -531,10 +637,8 @@ app.on("before-quit", () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
   codex.dispose();
-  if (usageWorker) {
-    usageWorker.terminate();
-    usageWorker = null;
-  }
+  cancelBackgroundIdle();
+  stopUsageWorker(true);
 });
 
 app.on("window-all-closed", () => {
