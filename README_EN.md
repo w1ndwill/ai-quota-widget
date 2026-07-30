@@ -1,34 +1,36 @@
 # AI Quota Widget
 
-A Windows desktop widget for viewing Codex quota and local token usage from Codex, Claude Code, and Antigravity.
+A Windows desktop widget for viewing Codex quota and local token usage from Codex, Claude Code, and Antigravity, with complete Chinese and English interfaces.
 
 [中文](README.md) · [Download](https://github.com/w1ndwill/ai-quota-widget/releases)
 
 ## Screenshots
 
+These screenshots come from the current application running with local data; quota, token, and model values vary by machine. Click an image to open it at full size.
+
 ### Quota and usage overview
 
-![AI Quota dashboard](docs/images/dashboard-overview.png)
+[![AI Quota dashboard](docs/images/en/dashboard-overview.jpg)](docs/images/en/dashboard-overview.jpg)
 
 View Codex quota, reset cards, 24-hour and cumulative token usage, trends, a daily heatmap, and cache-hit rates.
 
 ### Filter models by source
 
-![Model source filter](docs/images/model-source-filter.png)
+[![Model source filter](docs/images/en/model-source-filter.jpg)](docs/images/en/model-source-filter.jpg)
 
 Aggregate or filter model usage by Codex, Claude Code, and Antigravity.
 
 ### Data sources and appearance
 
-![Data-source and appearance settings](docs/images/settings-data-sources.png)
+[![Data-source and appearance settings](docs/images/en/settings-data-sources.jpg)](docs/images/en/settings-data-sources.jpg)
 
-Enable each data source independently and configure the language, theme, and global shortcuts.
+Enable each data source independently and configure the language, theme, and global shortcuts. Language changes update the dashboard, charts, model picker, and accessibility labels together.
 
 ### Compact mode
 
-![Compact mode](docs/images/compact-mode.png)
+[![Compact mode](docs/images/en/compact-mode.jpg)](docs/images/en/compact-mode.jpg)
 
-Keep only the quota summary in a small always-on-top window.
+Shrink the window to `336 × 72` logical pixels with only the two quota periods plus pin and expand controls.
 
 ## Features
 
@@ -38,7 +40,8 @@ Keep only the quota summary in a small always-on-top window.
 - Estimates the USD value of tokens from each model's public standard text API rates (not a subscription bill).
 - Estimates token usage from local Antigravity sessions; this is not official billing data.
 - Provides model filters, trend charts, a daily heatmap, and cache-hit rates where available.
-- Supports tray operation, always-on-top and compact modes, and single-instance startup.
+- Provides complete Chinese and English interfaces with light and dark themes.
+- Supports tray operation, always-on-top, a `336 × 72` compact mode, and single-instance startup.
 - Supports configurable shortcuts for panel visibility, compact mode, refresh, and always-on-top.
 
 Default shortcuts:

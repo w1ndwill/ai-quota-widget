@@ -47,10 +47,10 @@
         </header>
 
         <section class="dashboard">
-          <aside class="quota-side interactive-card" data-expand-title="额度概览" tabindex="0" title="完整视图中点击查看详情；紧凑视图中点击刷新" aria-label="额度概览，点击放大">
+          <aside id="quotaSide" class="quota-side interactive-card" data-expand-title="额度概览" tabindex="0" title="完整视图中点击查看详情；紧凑视图中点击刷新" aria-label="额度概览，点击放大">
             <section class="quota-rings">
               <div id="quotaRing" class="ring detail-target" data-detail-key="quotaRing">
-                <svg class="ring-chart" viewBox="0 0 150 150" role="group" aria-label="额度分层圆环">
+                <svg id="quotaRingChart" class="ring-chart" viewBox="0 0 150 150" role="group" aria-label="额度分层圆环">
                   <defs>
                     <linearGradient id="shortRingGradient" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0" stop-color="#75df91" />
@@ -69,7 +69,7 @@
                 <div class="ring-core">
                   <span id="ringShortValue" class="ring-value ring-value-short"><b id="ringShort">--%</b> <span id="ringShortLabel">5h</span></span>
                   <span id="ringLongValue" class="ring-value ring-value-long"><b id="ringLong">--%</b> <span id="ringLongLabel">7d</span></span>
-                  <small>剩余</small>
+                  <small id="remainingLabel">剩余</small>
                 </div>
               </div>
               <div class="ring-notes">
@@ -104,7 +104,7 @@
 
             <article id="resetRow" class="metric reset-row interactive-card" data-expand-title="重置卡" tabindex="0" role="button" aria-expanded="false" aria-label="重置卡，点击查看全部卡片">
               <div class="metric-main">
-                <div class="metric-title">重置卡</div>
+                <div class="metric-title" id="resetRowTitle">重置卡</div>
                 <p class="reset-sub" id="resetSub">可恢复 5 小时与周额度</p>
               </div>
               <div class="metric-side">
@@ -114,13 +114,13 @@
             </article>
           </aside>
 
-          <section class="token-grid" aria-label="Token 分析">
-            <article class="token-card total-token interactive-card" data-expand-title="近 24 小时 Token" tabindex="0" aria-label="近 24 小时 Token，点击放大">
+          <section id="tokenAnalysis" class="token-grid" aria-label="Token 分析">
+            <article id="totalTokenCard" class="token-card total-token interactive-card" data-expand-title="近 24 小时 Token" tabindex="0" aria-label="近 24 小时 Token，点击放大">
               <div class="card-head">
                 <span id="tokenCardTitle">近 24h Token</span>
                 <div class="token-range-toggle" id="tokenRangeToggle">
                   <button class="range-btn active" data-range="24h" aria-pressed="true">24h</button>
-                  <button class="range-btn" data-range="cumulative" aria-pressed="false">累计</button>
+                  <button id="cumulativeRangeButton" class="range-btn" data-range="cumulative" aria-pressed="false">累计</button>
                   <span class="range-slider"></span>
                 </div>
               </div>
@@ -146,9 +146,9 @@
               </div>
             </article>
 
-            <article class="token-card interactive-card" data-expand-title="命中率分析" tabindex="0" aria-label="命中率分析，点击放大">
+            <article id="hitRateCard" class="token-card interactive-card" data-expand-title="命中率分析" tabindex="0" aria-label="命中率分析，点击放大">
               <div class="card-head">
-                <span>命中率分析</span>
+                <span id="hitRateTitle">命中率分析</span>
                 <b id="hitDelta">暂无数据</b>
               </div>
               <strong id="cacheHitRate">--%</strong>
@@ -157,11 +157,11 @@
           </section>
 
           <section class="analysis-grid">
-            <article class="trend-card interactive-card" data-expand-title="Token 消耗趋势" tabindex="0" aria-label="Token 消耗趋势，点击放大">
-              <div class="trend-head"><strong>Token 消耗趋势</strong><span id="trendDelta">24 小时 / 7 天</span></div>
+            <article id="trendCard" class="trend-card interactive-card" data-expand-title="Token 消耗趋势" tabindex="0" aria-label="Token 消耗趋势，点击放大">
+              <div class="trend-head"><strong id="trendTitle">Token 消耗趋势</strong><span id="trendDelta">24 小时 / 7 天</span></div>
               <div class="trend-panels">
                 <section class="trend-panel">
-                  <div class="trend-panel-head"><b>近 24 小时</b><span id="trend24Summary">数据积累中</span></div>
+                  <div class="trend-panel-head"><b id="trend24Label">近 24 小时</b><span id="trend24Summary">数据积累中</span></div>
                   <div class="chart-shell">
                     <svg id="trend24Chart" class="token-trend-chart" viewBox="0 0 420 112" preserveAspectRatio="none" role="img" aria-label="近 24 小时 Token 消耗">
                       <defs><linearGradient id="trend24Gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58c868" stop-opacity=".28"/><stop offset="1" stop-color="#58c868" stop-opacity="0"/></linearGradient></defs>
@@ -176,7 +176,7 @@
                   </div>
                 </section>
                 <section class="trend-panel">
-                  <div class="trend-panel-head"><b>近 7 天</b><span id="trend7Summary">日消耗</span></div>
+                  <div class="trend-panel-head"><b id="trend7Label">近 7 天</b><span id="trend7Summary">日消耗</span></div>
                   <div class="chart-shell">
                     <svg id="trend7Chart" class="token-trend-chart" viewBox="0 0 420 112" preserveAspectRatio="none" role="img" aria-label="近 7 天 Token 消耗">
                       <defs><linearGradient id="trend7Gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6757e7" stop-opacity=".22"/><stop offset="1" stop-color="#6757e7" stop-opacity="0"/></linearGradient></defs>
@@ -197,9 +197,9 @@
               </div>
             </article>
 
-            <article class="heat-card interactive-card" data-expand-title="每日Token消耗" tabindex="0" aria-label="每日Token消耗，点击放大">
+            <article id="heatCard" class="heat-card interactive-card" data-expand-title="每日Token消耗" tabindex="0" aria-label="每日Token消耗，点击放大">
               <div class="trend-head">
-                <strong>每日Token消耗</strong>
+                <strong id="heatTitle">每日Token消耗</strong>
                 <span id="hitTrendLabel">最近 30 天</span>
               </div>
               <div class="heatmap-wrap">
@@ -209,9 +209,9 @@
               <div class="heat-footer">
                 <span id="heatDateStart">--</span>
                 <div class="heat-scale">
-                  <span>低</span>
+                  <span id="heatLow">低</span>
                   <i></i><i></i><i></i><i></i><i></i>
-                  <span>高</span>
+                  <span id="heatHigh">高</span>
                 </div>
                 <span id="heatDateEnd">--</span>
               </div>
@@ -237,9 +237,9 @@
     </section>
     <section id="settingsPanel" class="settings-panel" aria-hidden="true">
       <div class="settings-backdrop"></div>
-      <div class="settings-card" role="dialog" aria-modal="true" aria-label="设置">
+      <div id="settingsCard" class="settings-card" role="dialog" aria-modal="true" aria-label="设置">
         <header class="settings-head">
-          <strong>设置</strong>
+          <strong id="settingsTitle">设置</strong>
           <button id="settingsClose" class="icon-button" title="关闭" aria-label="关闭设置">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M8 8l8 8M16 8l-8 8" />

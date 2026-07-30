@@ -39,7 +39,7 @@ app.setPath("userData", userDataPath);
 process.env.AI_QUOTA_USER_DATA_PATH = userDataPath;
 
 const NORMAL_SIZE = { width: 760, height: 540 };
-const COMPACT_SIZE = { width: 360, height: 76 };
+const COMPACT_SIZE = { width: 336, height: 72 };
 
 let appConfig = {
   enableCodex: true,
