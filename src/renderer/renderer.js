@@ -359,11 +359,23 @@ function applyTheme(theme) {
 
 const I18N = {
   zh: {
+    quotaOverview: "额度概览",
+    quotaOverviewHint: "完整视图中点击查看详情；紧凑视图中点击刷新",
+    quotaOverviewAria: "额度概览，点击放大",
+    quotaRingAria: "额度分层圆环",
+    resetRowAria: "重置卡，点击查看全部卡片",
+    tokenAnalysis: "Token 分析",
+    cardExpandAria: (title) => `${title}，点击放大`,
     resetSub: "可恢复 5 小时与周额度",
     trendTitle: "Token 消耗趋势",
     heatTitle: "每日Token消耗",
     hitRate: "命中率分析",
     token24h: "近 24h Token",
+    cumulativeToken: "累计 Token",
+    cumulative: "累计",
+    localSession: "本地会话",
+    apiData: "接口数据",
+    estimated: "估算",
     tokenInput: "输入",
     tokenCache: "缓存",
     tokenOutput: "输出",
@@ -385,7 +397,10 @@ const I18N = {
     saveBtn: "保存",
     settingsClose: "关闭设置",
     allModels: "全部模型",
+    sourceAll: "全部",
     unknownModel: "未知模型",
+    modelPickerAria: "选择统计模型",
+    modelExpanderAria: (source) => `展开或收起 ${source} 模型`,
     sourceSectionTitle: "启用的数据源",
     labelCodex: "OpenAI Codex 额度与日志",
     labelClaudeCode: "Claude Code 本地日志",
@@ -414,6 +429,7 @@ const I18N = {
     shortLabel: "5小时",
     weekLabel: "周限额",
     remaining: "剩余",
+    unlimited: "无限制",
     low: "低",
     high: "高",
     hitExcellent: "优秀",
@@ -423,6 +439,13 @@ const I18N = {
     trend24Summary: "数据积累中",
     trend7Summary: "日消耗",
     trendHover: "悬浮曲线查看数值",
+    trendRange: "24 小时 / 7 天",
+    trend24Label: "近 24 小时",
+    trend7Label: "近 7 天",
+    recent30Days: "最近 30 天",
+    hoursAgo: (hours) => `${hours}h 前`,
+    now: "现在",
+    sevenDayAverage: (value) => `7d 平均 ${value}`,
     hitSummaryExcellent: "上下文复用极佳，输入成本被大幅削减。",
     hitSummaryGood: "上下文复用良好，有显著的成本节省效果。",
     hitSummaryMid: "缓存有贡献，仍可继续稳定提示词结构。",
@@ -431,6 +454,7 @@ const I18N = {
     resetCount: (n) => `${n} 张`,
     resetCard: "重置卡",
     noResetCredits: "暂无重置卡",
+    closeResetCards: "关闭重置卡列表",
     grantedAt: "获得时间",
     expiresAt: "到期时间",
     unknownTime: "未知",
@@ -440,11 +464,23 @@ const I18N = {
     unknownStatus: "未知状态",
   },
   en: {
+    quotaOverview: "Quota Overview",
+    quotaOverviewHint: "Click for details in the full view; click to refresh in compact view",
+    quotaOverviewAria: "Quota overview, click to expand",
+    quotaRingAria: "Layered quota rings",
+    resetRowAria: "Reset cards, click to view all",
+    tokenAnalysis: "Token Analysis",
+    cardExpandAria: (title) => `${title}, click to expand`,
     resetSub: "Restores 5h & weekly quota",
     trendTitle: "Token Trend",
     heatTitle: "Daily Token Usage",
     hitRate: "Cache Hit Rate",
     token24h: "24h Tokens",
+    cumulativeToken: "Cumulative Tokens",
+    cumulative: "Cumulative",
+    localSession: "Local Sessions",
+    apiData: "API Data",
+    estimated: "Estimate",
     tokenInput: "Input",
     tokenCache: "Cache",
     tokenOutput: "Output",
@@ -466,7 +502,10 @@ const I18N = {
     saveBtn: "Save",
     settingsClose: "Close settings",
     allModels: "All Models",
+    sourceAll: "All",
     unknownModel: "Unknown",
+    modelPickerAria: "Select usage model",
+    modelExpanderAria: (source) => `Expand or collapse ${source} models`,
     sourceSectionTitle: "Data Sources",
     labelCodex: "OpenAI Codex Quota & Logs",
     labelClaudeCode: "Claude Code Local Logs",
@@ -491,10 +530,11 @@ const I18N = {
     waitingData: "Waiting",
     refreshFailed: "Refresh failed",
     expireUnknown: "Unknown",
-    resetCards: "Reset Cards",
+    resetCards: "Resets",
     shortLabel: "5 Hours",
     weekLabel: "Weekly",
     remaining: "Remaining",
+    unlimited: "Unlimited",
     low: "Low",
     high: "High",
     hitExcellent: "Excellent",
@@ -504,6 +544,13 @@ const I18N = {
     trend24Summary: "Accumulating",
     trend7Summary: "Daily",
     trendHover: "Hover to see values",
+    trendRange: "24 Hours / 7 Days",
+    trend24Label: "Last 24 Hours",
+    trend7Label: "Last 7 Days",
+    recent30Days: "Last 30 Days",
+    hoursAgo: (hours) => `${hours}h ago`,
+    now: "Now",
+    sevenDayAverage: (value) => `7d avg ${value}`,
     hitSummaryExcellent: "Outstanding cache reuse, significantly slashing input costs.",
     hitSummaryGood: "Strong context reuse keeps input costs low.",
     hitSummaryMid: "Cache helps, consider stabilizing prompt structure.",
@@ -512,6 +559,7 @@ const I18N = {
     resetCount: (n) => `${n} cards`,
     resetCard: "Reset card",
     noResetCredits: "No reset cards",
+    closeResetCards: "Close reset-card list",
     grantedAt: "Granted",
     expiresAt: "Expires",
     unknownTime: "Unknown",
@@ -547,11 +595,60 @@ function applyLang(lang) {
     i18n = I18N[lang] || I18N.zh;
     document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
     const set = (id, key) => { const el = document.getElementById(id); if (el) el.textContent = t(key); };
-    const attr = (id, key) => { const el = document.getElementById(id); if (el) el.title = t(key); };
+    const setAttribute = (id, name, value) => {
+      const el = document.getElementById(id);
+      if (el) el.setAttribute(name, value);
+    };
+    const setTitleAndAria = (id, key) => {
+      const value = t(key);
+      setAttribute(id, "title", value);
+      setAttribute(id, "aria-label", value);
+    };
+    const setExpandableCard = (id, key) => {
+      const title = t(key);
+      setAttribute(id, "data-expand-title", title);
+      setAttribute(id, "aria-label", t("cardExpandAria", title));
+    };
+
+    setAttribute("shell", "title", t("shellTitle"));
+    setTitleAndAria("refreshButton", "refreshTip");
+    setTitleAndAria("settingsButton", "settingsTitle");
+    setTitleAndAria("closeButton", "closeTip");
+    setAttribute("quotaSide", "data-expand-title", t("quotaOverview"));
+    setAttribute("quotaSide", "title", t("quotaOverviewHint"));
+    setAttribute("quotaSide", "aria-label", t("quotaOverviewAria"));
+    setAttribute("quotaRingChart", "aria-label", t("quotaRingAria"));
+    set("remainingLabel", "remaining");
     set("resetSub", "resetSub");
+    set("resetRowTitle", "resetCards");
+    setAttribute("resetRow", "data-expand-title", t("resetCards"));
+    setAttribute("resetRow", "aria-label", t("resetRowAria"));
+    setAttribute("tokenAnalysis", "aria-label", t("tokenAnalysis"));
+    setExpandableCard("totalTokenCard", "token24h");
+    setExpandableCard("hitRateCard", "hitRate");
+    setExpandableCard("trendCard", "trendTitle");
+    setExpandableCard("heatCard", "heatTitle");
+    set("cumulativeRangeButton", "cumulative");
+    set("hitRateTitle", "hitRate");
+    set("trendTitle", "trendTitle");
+    set("trendDelta", "trendRange");
+    set("trend24Label", "trend24Label");
+    set("trend7Label", "trend7Label");
+    set("trend24Summary", "trend24Summary");
+    set("trend7Summary", "trend7Summary");
+    set("trendAverage", "trendHover");
+    set("heatTitle", "heatTitle");
+    set("hitTrendLabel", "recent30Days");
+    set("heatLow", "low");
+    set("heatHigh", "high");
+    setAttribute("trend24Chart", "aria-label", `${t("trend24Label")} Token`);
+    setAttribute("trend7Chart", "aria-label", `${t("trend7Label")} Token`);
     set("langLabel", "langLabel");
     set("themeLabel", "themeLabel");
     set("settingsSave", "saveBtn");
+    set("settingsTitle", "settingsTitle");
+    setAttribute("settingsCard", "aria-label", t("settingsTitle"));
+    setTitleAndAria("settingsClose", "settingsClose");
     set("shortLabel", "shortLabel");
     set("longLabel", "weekLabel");
     set("tokenValueLabel", "tokenValue");
@@ -559,9 +656,9 @@ function applyLang(lang) {
     const optDark = document.querySelector("#themeSelect option[value=dark]");
     if (optLight) optLight.textContent = t("themeLight");
     if (optDark) optDark.textContent = t("themeDark");
-    const st = document.querySelector(".settings-head strong");
-    if (st) st.textContent = t("settingsTitle");
     set("resetDialogTitle", "resetCards");
+    set("resetDialogSummary", "noResetCredits");
+    setTitleAndAria("resetDialogClose", "closeResetCards");
     set("sourceSectionTitle", "sourceSectionTitle");
     set("labelCodex", "labelCodex");
     set("labelClaudeCode", "labelClaudeCode");
@@ -577,12 +674,26 @@ function applyLang(lang) {
     set("hotkeyRefreshClear", "hotkeyClear");
     set("hotkeyTogglePinClear", "hotkeyClear");
     set("hotkeyRestoreDefaults", "hotkeyRestoreDefaults");
-    document.querySelectorAll(".hotkey-input").forEach((input) => { input.placeholder = t("hotkeyUnset"); });
-    attr("refreshButton", "refreshTip");
+    const hotkeyAria = {
+      hotkeyTogglePanel: "hotkeyTogglePanel",
+      hotkeyToggleCompact: "hotkeyToggleCompact",
+      hotkeyRefresh: "hotkeyRefresh",
+      hotkeyTogglePin: "hotkeyTogglePin"
+    };
+    document.querySelectorAll(".hotkey-input").forEach((input) => {
+      input.placeholder = t("hotkeyUnset");
+      input.setAttribute("aria-label", t(hotkeyAria[input.id]));
+    });
+    document.querySelectorAll(".hotkey-clear-button").forEach((button) => {
+      button.setAttribute("aria-label", t("hotkeyClear"));
+    });
+    if (elements.modelPickerTrigger) {
+      elements.modelPickerTrigger.setAttribute("aria-label", t("modelPickerAria"));
+    }
     applyPinnedState(elements.pinButton.classList.contains("active"));
     applyCompactState(isCompact);
-    attr("closeButton", "closeTip");
     if (lastSnapshot) render(lastSnapshot);
+    else syncModelSelect(mergedModels);
   } catch(e) { /* don't crash on i18n */ }
 }
 
@@ -624,7 +735,7 @@ function applyCompactState(compact) {
   localStorage.setItem("compact", isCompact ? "1" : "0");
   document.body.classList.toggle("compact", isCompact);
   elements.compactButton.title = isCompact ? t("expandTip") : t("compactTip");
-  elements.compactButton.setAttribute("aria-label", isCompact ? "展开完整视图" : "切换为紧凑视图");
+  elements.compactButton.setAttribute("aria-label", isCompact ? t("expandTip") : t("compactTip"));
   elements.compactButton.setAttribute("aria-pressed", String(isCompact));
   elements.compactIcon.setAttribute(
     "d",
@@ -656,11 +767,11 @@ function render(snapshot) {
     renderWindow(
       "short",
       windows.shortWindow,
-      "5小时",
+      t("shortLabel"),
       Boolean(quota),
       { unlimitedWhenMissing: Boolean(quota?.longWindow && !quota?.shortWindow) }
     );
-    renderWindow("long", windows.longWindow, "周限额", Boolean(quota));
+    renderWindow("long", windows.longWindow, t("weekLabel"), Boolean(quota));
     renderRing(windows, Boolean(quota));
     renderResetCredits(snapshot?.resetCredits, quota?.resetCard);
 
@@ -750,7 +861,7 @@ function setupModelSelect() {
   trigger.type = "button";
   trigger.setAttribute("aria-haspopup", "listbox");
   trigger.setAttribute("aria-expanded", "false");
-  trigger.setAttribute("aria-label", "\u9009\u62e9\u7edf\u8ba1\u6a21\u578b");
+  trigger.setAttribute("aria-label", t("modelPickerAria"));
   label.className = "model-picker-label";
   arrow.className = "model-picker-arrow";
   menu.className = "model-picker-menu";
@@ -780,7 +891,7 @@ function syncModelSelect(modelUsage) {
   if (!allowed.has(selectedModel)) selectedModel = "all";
   updateModelPickerWidth(models);
   elements.modelPickerMenu.replaceChildren();
-  const allOption = buildModelOption({ model: "all", label: "\u5168\u90e8\u6a21\u578b", kind: "all" });
+  const allOption = buildModelOption({ model: "all", label: t("allModels"), kind: "all" });
   elements.modelPickerMenu.append(allOption);
   for (const source of MODEL_SOURCES) {
     const sourceModels = models.filter((item) => item.source === source.key);
@@ -792,14 +903,14 @@ function syncModelSelect(modelUsage) {
     sourceRow.className = "model-picker-source-row";
     const sourceOption = buildModelOption({
       model: `source:${source.key}`,
-      label: `${source.label} · \u5168\u90e8`,
+      label: `${source.label} · ${t("sourceAll")}`,
       source: source.key,
       kind: "source"
     });
     const expander = document.createElement("button");
     expander.type = "button";
     expander.className = "model-picker-expander";
-    expander.setAttribute("aria-label", `展开或收起 ${source.label} 模型`);
+    expander.setAttribute("aria-label", t("modelExpanderAria", source.label));
     const modelList = document.createElement("div");
     modelList.className = "model-picker-models";
     const updateExpandedState = () => {
@@ -820,7 +931,7 @@ function syncModelSelect(modelUsage) {
     for (const item of sourceModels) {
       modelList.append(buildModelOption({
         model: item.sourceModel || item.model,
-        label: item.model === "unknown" ? "\u672a\u77e5\u6a21\u578b" : item.model,
+        label: item.model === "unknown" ? t("unknownModel") : item.model,
         source: source.key,
         kind: "model"
       }));
@@ -832,9 +943,9 @@ function syncModelSelect(modelUsage) {
   const parsed = parseModelSelection(selectedModel);
   const sel = models.find((m) => (m.sourceModel || m.model) === selectedModel);
   elements.modelPickerLabel.textContent = parsed.kind === "all"
-    ? "\u5168\u90e8\u6a21\u578b"
+    ? t("allModels")
     : parsed.kind === "source"
-      ? `${modelSourceLabel(parsed.source)} · \u5168\u90e8`
+      ? `${modelSourceLabel(parsed.source)} · ${t("sourceAll")}`
       : (sel?.model || parsed.model || selectedModel);
 }
 
@@ -845,9 +956,9 @@ function updateModelPickerWidth(models) {
   if (!context) return;
   context.font = getComputedStyle(elements.modelPickerTrigger).font;
   const labels = [
-    "全部模型",
-    ...MODEL_SOURCES.map((source) => `${source.label} · 全部`),
-    ...models.map((item) => item.model === "unknown" ? "未知模型" : item.model)
+    t("allModels"),
+    ...MODEL_SOURCES.map((source) => `${source.label} · ${t("sourceAll")}`),
+    ...models.map((item) => item.model === "unknown" ? t("unknownModel") : item.model)
   ];
   const longest = Math.max(...labels.map((label) => context.measureText(label).width), 0);
   const width = Math.min(420, Math.max(205, Math.ceil(longest + 58)));
@@ -878,13 +989,13 @@ function buildModelOption(item) {
 }
 
 function sourceLabel(stats) {
-  if (!stats) return "\u65e0\u6570\u636e";
-  const suffix = tokenRange === "cumulative" ? " · 累计" : "";
+  if (!stats) return t("noData");
+  const suffix = tokenRange === "cumulative" ? ` · ${t("cumulative")}` : "";
   if (stats.source === "codex") return "Codex" + suffix;
   if (stats.source === "claude") return "Claude Code" + suffix;
-  if (stats.source === "antigravity") return "Antigravity \u00b7 \u4f30\u7b97" + suffix;
+  if (stats.source === "antigravity") return `Antigravity · ${t("estimated")}${suffix}`;
   if (stats.source === "merged") return "Codex + Antigravity" + suffix;
-  return (stats.source === "localSessions" || stats.source === "localModel" ? "\u672c\u5730\u4f1a\u8bdd" : "\u63a5\u53e3\u6570\u636e") + suffix;
+  return (stats.source === "localSessions" || stats.source === "localModel" ? t("localSession") : t("apiData")) + suffix;
 }
 
 function openModelPicker() {
@@ -1043,16 +1154,22 @@ function currentModelUsage(snapshot) {
   return models;
 }
 
+function localizedQuotaLabel(quotaWindow, fallbackLabel) {
+  if (quotaWindow?.durationMins === 300) return t("shortLabel");
+  if (quotaWindow?.durationMins === 10080) return t("weekLabel");
+  return quotaWindow?.label || fallbackLabel;
+}
+
 function renderWindow(prefix, quotaWindow, fallbackLabel, hideWhenMissing = true, options = {}) {
   const unlimited = options.unlimitedWhenMissing && !quotaWindow;
   const metric = elements[`${prefix}Metric`];
   if (metric) metric.hidden = hideWhenMissing && !quotaWindow && !unlimited;
   const percent = unlimited ? 100 : quotaWindow?.remainingPercent;
   const tone = toneForPercent(percent);
-  elements[`${prefix}Label`].textContent = quotaWindow?.label || fallbackLabel;
+  elements[`${prefix}Label`].textContent = localizedQuotaLabel(quotaWindow, fallbackLabel);
   elements[`${prefix}Value`].textContent = unlimited ? "∞" : percent == null ? "--%" : `${percent}%`;
   elements[`${prefix}Reset`].textContent = unlimited
-    ? "无限制"
+    ? t("unlimited")
     : quotaWindow?.resetsAt ? formatDateTime(quotaWindow.resetsAt) : t("waitingData");
   elements[`${prefix}ResetCompact`].textContent = unlimited
     ? "∞"
@@ -1076,7 +1193,7 @@ function renderRing(windows, hasQuota) {
   elements.ringShort.textContent = short == null ? "--%" : `${short}%`;
   elements.ringLong.textContent = long == null ? "--%" : `${long}%`;
   elements.ringShortLabel.textContent = compactWindowLabel(shortWindow, "5h");
-  elements.ringLongLabel.textContent = compactWindowLabel(longWindow, "周限额");
+  elements.ringLongLabel.textContent = compactWindowLabel(longWindow, t("weekLabel"));
   elements.shortResetCompact.textContent = shortWindow?.resetsAt ? formatCompactDate(shortWindow.resetsAt) : "--";
   elements.longResetCompact.textContent = longWindow?.resetsAt ? formatCompactDate(longWindow.resetsAt) : "--";
   elements.shortRingArc.style.strokeDasharray = `${clamp(short ?? 0)} 100`;
@@ -1178,7 +1295,7 @@ async function renderTokenStats(stats, modelUsage, renderId) {
   let titleText = t("token24h");
 
   if (tokenRange === "cumulative") {
-    titleText = "累计 Token";
+    titleText = t("cumulativeToken");
     if (!initialDataReady) {
       displayStats = null;
     } else {
@@ -1426,9 +1543,9 @@ function renderTrendWithData(daily, hourly) {
     fullLabel: `${formatDateTime(entry.t)}–${formatHourMinute(entry.t + 60 * 60_000)}`
   }));
   renderTokenChart("24", recent, [
-    { x: 0, label: "24h 前" },
-    { x: 0.5, label: "12h 前" },
-    { x: 1, label: "现在" }
+    { x: 0, label: t("hoursAgo", 24) },
+    { x: 0.5, label: t("hoursAgo", 12) },
+    { x: 1, label: t("now") }
   ]);
 
   const today = new Date(now);
@@ -1446,9 +1563,9 @@ function renderTrendWithData(daily, hourly) {
   const weekTotal = days.reduce((sum, day) => sum + day.value, 0);
   elements.trend24Summary.textContent = recent.length ? `∑ ${formatToken(current24)}` : t("trend24Summary");
   elements.trend7Summary.textContent = `∑ ${formatToken(weekTotal)}`;
-  elements.trendDelta.textContent = "24h / 7d";
+  elements.trendDelta.textContent = t("trendRange");
   elements.trendTotal.textContent = `24h ${formatToken(current24)} · 7d ${formatToken(weekTotal)}`;
-  elements.trendAverage.textContent = `7d avg ${formatToken(Math.round(weekTotal / 7))}`;
+  elements.trendAverage.textContent = t("sevenDayAverage", formatToken(Math.round(weekTotal / 7)));
 }
 
 function renderHeatmapWithData(daily) {
@@ -1490,7 +1607,7 @@ function setupHeatmapTooltip() {
     if (cell.tagName !== "SPAN") return;
     const label = cell.dataset.label;
     const token = cell.dataset.token;
-    tip.textContent = token ? `${label} · ${token}` : `${label} · 无数据`;
+    tip.textContent = token ? `${label} · ${token}` : `${label} · ${t("noData")}`;
     const wrapRect = heatmap.parentElement.getBoundingClientRect();
     const cellRect = cell.getBoundingClientRect();
     tip.style.left = `${cellRect.left - wrapRect.left + cellRect.width / 2}px`;
@@ -1699,7 +1816,7 @@ function clamp(value) {
 }
 
 function formatTime(timestamp) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(currentLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -1708,7 +1825,7 @@ function formatTime(timestamp) {
 }
 
 function formatHourMinute(timestamp) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(currentLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
@@ -1716,7 +1833,7 @@ function formatHourMinute(timestamp) {
 }
 
 function formatDateTime(timestamp) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(currentLocale(), {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -1726,7 +1843,7 @@ function formatDateTime(timestamp) {
 }
 
 function formatCompactDate(timestamp) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(currentLocale(), {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -1736,7 +1853,11 @@ function formatCompactDate(timestamp) {
 }
 
 function formatMonthDay(date) {
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+  return new Intl.DateTimeFormat(currentLocale(), { month: "numeric", day: "numeric" }).format(date);
+}
+
+function currentLocale() {
+  return document.documentElement.lang === "en" ? "en-US" : "zh-CN";
 }
 
 function generateAndSaveTrayIcon() {

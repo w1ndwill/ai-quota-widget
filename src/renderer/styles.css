@@ -783,6 +783,15 @@ body {
   line-height: 1.35;
 }
 
+:root[lang="en"] .quota-side .reset-row {
+  gap: 8px;
+  padding-inline: 12px;
+}
+
+:root[lang="en"] .quota-side .reset-row .metric-title {
+  font-size: 14px;
+}
+
 .model-picker.open .model-picker-menu {
   display: grid;
   gap: 2px;
@@ -1481,23 +1490,23 @@ body.refreshing #refreshButton svg {
 }
 
 body.compact {
-  width: 360px;
-  height: 76px;
-  min-width: 360px;
-  min-height: 76px;
+  width: 336px;
+  height: 72px;
+  min-width: 336px;
+  min-height: 72px;
 }
 
 body.compact .shell {
-  width: 360px;
-  height: 76px;
+  width: 336px;
+  height: 72px;
   padding: 0;
 }
 
 body.compact .panel {
-  width: 360px;
-  height: 76px;
-  padding: 10px 12px;
-  border-radius: 16px;
+  width: 336px;
+  height: 72px;
+  padding: 9px 10px;
+  border-radius: 15px;
   background:
     radial-gradient(circle at 12% 0, rgba(255, 255, 255, 0.76), transparent 45%),
     linear-gradient(110deg, rgba(244, 248, 245, 0.9), rgba(224, 238, 228, 0.84));
@@ -1507,7 +1516,7 @@ body.compact .panel {
 
 body.compact .titlebar {
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 10;
@@ -1562,7 +1571,7 @@ body.compact .dashboard {
 
 body.compact .quota-side {
   display: block;
-  padding: 0 42px 0 0;
+  padding: 0 34px 0 0;
   border: 0;
   border-radius: 0;
   background: none;
@@ -1572,7 +1581,7 @@ body.compact .quota-side {
 body.compact .quota-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 body.compact .metric {

@@ -1,34 +1,36 @@
 # AI 额度（AI Quota Widget）
 
-一个常驻桌面的 Windows 悬浮窗，用于查看 Codex 额度，以及 Codex、Claude Code 和 Antigravity 的本地 Token 用量。
+一个常驻桌面的 Windows 悬浮窗，用于查看 Codex 额度，以及 Codex、Claude Code 和 Antigravity 的本地 Token 用量。界面支持完整的中英文切换。
 
 [English](README_EN.md) · [下载发行版](https://github.com/w1ndwill/ai-quota-widget/releases)
 
 ## 界面
 
+以下截图来自当前版本的真实运行界面；额度、Token 和模型数据会随本机使用情况变化。点击图片可查看原图。
+
 ### 额度与用量总览
 
-![AI 额度总览界面](docs/images/dashboard-overview.png)
+[![AI 额度总览界面](docs/images/zh/dashboard-overview.jpg)](docs/images/zh/dashboard-overview.jpg)
 
 集中显示 Codex 额度、重置卡、近 24 小时与累计 Token、趋势图、每日热力图和缓存命中率。
 
 ### 按来源筛选模型
 
-![按来源筛选模型](docs/images/model-source-filter.png)
+[![按来源筛选模型](docs/images/zh/model-source-filter.jpg)](docs/images/zh/model-source-filter.jpg)
 
 按 Codex、Claude Code、Antigravity 汇总或筛选模型用量。
 
 ### 数据源与外观
 
-![数据源与外观设置](docs/images/settings-data-sources.png)
+[![数据源与外观设置](docs/images/zh/settings-data-sources.jpg)](docs/images/zh/settings-data-sources.jpg)
 
-可分别启用数据源，并切换中英文、亮色或暗色主题和全局快捷键。
+可分别启用数据源，并切换中英文、亮色或暗色主题和全局快捷键；语言切换会同步更新总览、图表、筛选器和辅助功能标签。
 
 ### 紧凑模式
 
-![紧凑模式](docs/images/compact-mode.png)
+[![紧凑模式](docs/images/zh/compact-mode.jpg)](docs/images/zh/compact-mode.jpg)
 
-仅保留额度摘要，适合置顶常驻。
+将窗口收至 `336 × 72` 逻辑像素，仅保留两档额度和置顶、展开按钮，适合置顶常驻。
 
 ## 主要功能
 
@@ -38,7 +40,8 @@
 - 按模型公开的标准文本 API 单价估算 Token 的美元价值（不等同于订阅账单）。
 - 根据本机 Antigravity 会话估算 Token 用量；该数据不是官方账单。
 - 提供模型筛选、趋势图、每日热力图和可用数据源的缓存命中率。
-- 支持托盘运行、窗口置顶、紧凑模式和单实例运行。
+- 支持完整的中英文界面、亮色与暗色主题。
+- 支持托盘运行、窗口置顶、`336 × 72` 紧凑模式和单实例运行。
 - 支持自定义显示面板、紧凑模式、刷新和置顶快捷键。
 
 默认快捷键：
